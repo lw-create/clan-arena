@@ -117,21 +117,20 @@ def get_me(user=Depends(get_current_user)):
                 if reg:
                     my_registration = {"registered": True, "registered_at": reg["registered_at"]}
 
-                # 检查本轮是否有已登记的活跃匹配
+                # 检查本轮是否有活跃匹配（包括已登记和未登记）
                 clan_ids = [c["id"] for c in clans]
                 if clan_ids:
                     in_placeholder = ",".join(["%s"] * len(clan_ids))
                     cursor.execute(f"""
                         SELECT m.clan_a_id, m.clan_b_id, ca.name as clan_a_name, cb.name as clan_b_name,
-                               m.winner_id, m.loser_id
+                               m.winner_id, m.loser_id, m.is_registered, m.remark
                         FROM matches m
                         JOIN clans ca ON m.clan_a_id = ca.id
                         JOIN clans cb ON m.clan_b_id = cb.id
-                        WHERE m.is_registered = 1
-                          AND m.matched_at >= %s
+                        WHERE m.matched_at >= %s
                           AND (m.clan_a_id IN ({in_placeholder}) OR m.clan_b_id IN ({in_placeholder}))
                         ORDER BY m.matched_at DESC LIMIT 1
-                    """, (current_round["start_time"], *clan_ids, *clan_ids))
+                    """, (current_round["opened_at"], *clan_ids, *clan_ids))
                     active_match = cursor.fetchone()
                     if active_match:
                         has_active_match = True
@@ -139,17 +138,34 @@ def get_me(user=Depends(get_current_user)):
                         my_clan_id = active_match["clan_a_id"] if active_match["clan_a_id"] in my_clan_id_set else active_match["clan_b_id"]
                         opponent_name = active_match["clan_b_name"] if my_clan_id == active_match["clan_a_id"] else active_match["clan_a_name"]
                         my_clan_name = active_match["clan_a_name"] if my_clan_id == active_match["clan_a_id"] else active_match["clan_b_name"]
-                        is_win = active_match["winner_id"] == my_clan_id
-                        active_match_info = {
-                            "opponent_name": opponent_name,
-                            "my_clan_name": my_clan_name,
-                            "my_clan_id": my_clan_id,
-                            "result": "win" if is_win else "lose",
-                            "winner_id": active_match["winner_id"],
-                            "loser_id": active_match["loser_id"],
-                            "winner_name": my_clan_name if is_win else opponent_name,
-                            "loser_name": opponent_name if is_win else my_clan_name,
-                        }
+
+                        if active_match["is_registered"] == 1:
+                            # 已登记对战：胜/负
+                            is_win = active_match["winner_id"] == my_clan_id
+                            active_match_info = {
+                                "opponent_name": opponent_name,
+                                "my_clan_name": my_clan_name,
+                                "my_clan_id": my_clan_id,
+                                "result": "win" if is_win else "lose",
+                                "winner_id": active_match["winner_id"],
+                                "loser_id": active_match["loser_id"],
+                                "winner_name": my_clan_name if is_win else opponent_name,
+                                "loser_name": opponent_name if is_win else my_clan_name,
+                            }
+                        else:
+                            # 未登记对战：根据 remark 判定为"待定"或"以部落管理通知为准"
+                            remark = active_match["remark"] or ""
+                            if "其他联盟" in remark or "其他互刷" in remark or remark == "匹配到其他互刷联盟":
+                                result = "pending"
+                            else:
+                                result = "admin_notice"
+                            active_match_info = {
+                                "opponent_name": opponent_name,
+                                "my_clan_name": my_clan_name,
+                                "my_clan_id": my_clan_id,
+                                "result": result,
+                                "remark": remark,
+                            }
 
             # 积分操作指南
             cursor.execute("SELECT content FROM score_guide ORDER BY id DESC LIMIT 1")

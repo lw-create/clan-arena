@@ -234,8 +234,7 @@ def match_unregistered(req: MatchUnregisteredRequest, user=Depends(get_current_u
             my_clan = cursor.fetchone()
             score_before = my_clan["score"]
 
-            cursor.execute("UPDATE clans SET score = score - 1 WHERE id = %s", (my_clan_id,))
-
+            # 未登记的匹配不扣分，积分保持不变
             temp_code = f"UNREG_{req.clan_code[:8]}_{user['id']}_{int(time.time() * 1000) % 100000}"
             cursor.execute(
                 "INSERT INTO clans (name, code, contact) VALUES (%s, %s, %s)",
@@ -263,8 +262,8 @@ def match_unregistered(req: MatchUnregisteredRequest, user=Depends(get_current_u
 
             match_id = cursor.lastrowid
 
-            cursor.execute("SELECT score FROM clans WHERE id = %s", (my_clan_id,))
-            new_score = cursor.fetchone()["score"]
+            # 未登记的对战不修改积分，保持原分数
+            new_score = score_before
 
     return {
         "matched": True,
@@ -273,7 +272,8 @@ def match_unregistered(req: MatchUnregisteredRequest, user=Depends(get_current_u
         "loser": {"id": my_clan_id, "name": my_clan["name"], "score": new_score},
         "score_before": {"clan_a": score_before, "clan_b": 0},
         "is_registered": False,
-        "message": "对方部落未登记，默认判输，积分 -1",
+        "remark": req.remark,
+        "message": "对战已登记，积分保持不变",
     }
 
 
@@ -309,7 +309,8 @@ def cancel_match(match_id: int, user=Depends(get_current_user)):
             # 检查是否为未登记对战
             is_unregistered = not match["is_registered"]
 
-            if match["winner_id"] and match["loser_id"]:
+            # 只有已登记（is_registered=1）的对战才需要恢复积分
+            if not is_unregistered and match["winner_id"] and match["loser_id"]:
                 cursor.execute("UPDATE clans SET score = score - 1 WHERE id = %s", (match["winner_id"],))
                 cursor.execute("UPDATE clans SET score = score + 1 WHERE id = %s", (match["loser_id"],))
 

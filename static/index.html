@@ -105,7 +105,7 @@
 
                     <div class="divider"></div>
                     <h3>匹配未成功？（包括匹配到其他联盟）</h3>
-                    <p class="hint-text">填写对方信息，默认判输（-1分）</p>
+                    <p class="hint-text">填写对方信息，由部落管理员判定结果，积分保持不变</p>
                     <div class="unregistered-form">
                         <input type="text" id="unreg-clan-name" placeholder="对方部落名称">
                         <input type="text" id="unreg-clan-code" placeholder="对方部落标签" oninput="checkUnknownClan(this.value)">
@@ -117,7 +117,7 @@
                             <option value="匹配到实战营">匹配到实战营</option>
                             <option value="其他">其他</option>
                         </select>
-                        <button class="btn btn-danger" onclick="matchUnregistered()">提交（判输）</button>
+                        <button class="btn btn-danger" onclick="matchUnregistered()">提交</button>
                     </div>
                     <div id="match-result" class="match-result"></div>
                 </div>
