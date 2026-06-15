@@ -42,7 +42,7 @@ def log_operation(db, admin_id: int, action: str, target_type: str = None,
     cursor = db.cursor()
     cursor.execute(
         "INSERT INTO operation_logs (admin_id, action, target_type, target_id, detail, reason) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (admin_id, action, target_type, target_id, detail, reason)
     )
 
@@ -51,7 +51,7 @@ def log_operation(db, admin_id: int, action: str, target_type: str = None,
 def login(req: LoginRequest):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM users WHERE username = ?", (req.username,))
+            cursor.execute("SELECT * FROM users WHERE username = %s", (req.username,))
             user = cursor.fetchone()
 
             # 维护模式检查：非管理员在维护期间无法登录
@@ -63,6 +63,9 @@ def login(req: LoginRequest):
 
     if not user or not verify_password(req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+    if user["role"] == "monitor":
+        raise HTTPException(status_code=403, detail="监察员账号请使用监察员登录入口")
 
     if user["status"] == "frozen":
         raise HTTPException(status_code=403, detail="账号已被冻结，请联系管理员解冻")
@@ -91,7 +94,7 @@ def get_me(user=Depends(get_current_user)):
                 "SELECT c.id as id, c.name, c.code, c.contact, c.score "
                 "FROM user_clan uc "
                 "JOIN clans c ON uc.clan_id = c.id "
-                "WHERE uc.user_id = ?", (user["id"],))
+                "WHERE uc.user_id = %s", (user["id"],))
             clans = cursor.fetchall()
 
             notifications = []
@@ -108,7 +111,7 @@ def get_me(user=Depends(get_current_user)):
             active_match_info = None
             if current_round:
                 cursor.execute(
-                    "SELECT registered_at FROM round_registrations WHERE round_id = ? AND user_id = ? LIMIT 1",
+                    "SELECT registered_at FROM round_registrations WHERE round_id = %s AND user_id = %s LIMIT 1",
                     (current_round["id"], user["id"])
                 )
                 reg = cursor.fetchone()
@@ -118,14 +121,14 @@ def get_me(user=Depends(get_current_user)):
                 # 检查本轮是否有已登记的活跃匹配
                 clan_ids = [c["id"] for c in clans]
                 if clan_ids:
-                    in_placeholder = ",".join(["?"] * len(clan_ids))
+                    in_placeholder = ",".join(["%s"] * len(clan_ids))
                     cursor.execute(f"""
                         SELECT m.clan_a_id, m.clan_b_id, ca.name as clan_a_name, cb.name as clan_b_name
                         FROM matches m
                         JOIN clans ca ON m.clan_a_id = ca.id
                         JOIN clans cb ON m.clan_b_id = cb.id
                         WHERE m.is_registered = 1
-                          AND m.matched_at >= ?
+                          AND m.matched_at >= %s
                           AND (m.clan_a_id IN ({in_placeholder}) OR m.clan_b_id IN ({in_placeholder}))
                         ORDER BY m.matched_at DESC LIMIT 1
                     """, [current_round["opened_at"]] + clan_ids + clan_ids)
@@ -170,7 +173,7 @@ def change_password(req: ChangePasswordRequest, user=Depends(get_current_user)):
     with get_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "UPDATE users SET password_hash = ?, plain_password = ?, must_change_pwd = 0 WHERE id = ?",
+                "UPDATE users SET password_hash = %s, plain_password = %s, must_change_pwd = 0 WHERE id = %s",
                 (password_hash, req.new_password, user["id"])
             )
     return {"message": "密码修改成功"}
@@ -182,7 +185,7 @@ def skip_change_pwd(user=Depends(get_current_user)):
     with get_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "UPDATE users SET must_change_pwd = 0 WHERE id = ?",
+                "UPDATE users SET must_change_pwd = 0 WHERE id = %s",
                 (user["id"],)
             )
     return {"message": "已跳过密码修改"}
@@ -192,10 +195,10 @@ def skip_change_pwd(user=Depends(get_current_user)):
 def update_clan_contact(clan_id: int, contact: str, user=Depends(get_current_user)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id FROM user_clan WHERE user_id = ? AND clan_id = ?", (user["id"], clan_id))
+            cursor.execute("SELECT id FROM user_clan WHERE user_id = %s AND clan_id = %s", (user["id"], clan_id))
             if not cursor.fetchone():
                 raise HTTPException(status_code=403, detail="您未绑定该部落")
-            cursor.execute("UPDATE clans SET contact = ? WHERE id = ?", (contact, clan_id))
+            cursor.execute("UPDATE clans SET contact = %s WHERE id = %s", (contact, clan_id))
     return {"message": "联系人已更新"}
 
 
@@ -215,7 +218,7 @@ def create_user(req: CreateUserRequest, admin=Depends(require_admin)):
         with get_db() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO users (username, password_hash, plain_password, role, must_change_pwd) VALUES (?, ?, ?, ?, 1)",
+                    "INSERT INTO users (username, password_hash, plain_password, role, must_change_pwd) VALUES (%s, %s, %s, %s, 1)",
                     (req.username, password_hash, req.password, req.role)
                 )
                 user_id = cursor.lastrowid
@@ -245,7 +248,7 @@ def list_users(admin=Depends(require_admin)):
                     SELECT c.id, c.name, c.code
                     FROM user_clan uc
                     JOIN clans c ON uc.clan_id = c.id
-                    WHERE uc.user_id = ?
+                    WHERE uc.user_id = %s
                 """, (u["id"],))
                 u["clans"] = cursor.fetchall()
                 u["is_super_admin"] = bool(u.get("is_super_admin", 0))
@@ -261,7 +264,7 @@ def delete_user(user_id: int, admin=Depends(require_admin)):
 
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT is_super_admin, role FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT is_super_admin, role FROM users WHERE id = %s", (user_id,))
             target = cursor.fetchone()
             if not target:
                 raise HTTPException(status_code=404, detail="用户不存在")
@@ -277,15 +280,15 @@ def delete_user(user_id: int, admin=Depends(require_admin)):
             today = datetime.utcnow().date()
             cursor.execute(
                 "SELECT COUNT(*) as cnt FROM operation_logs "
-                "WHERE admin_id = ? AND action = 'delete_user' AND DATE(created_at) = ?",
+                "WHERE admin_id = %s AND action = 'delete_user' AND DATE(created_at) = %s",
                 (admin["id"], today)
             )
             if cursor.fetchone()["cnt"] >= 3:
                 raise HTTPException(status_code=429, detail="今日删除用户已达上限（最多3个），请明天再试")
 
             # 先删除外键关联的记录
-            cursor.execute("DELETE FROM operation_logs WHERE admin_id = ?", (user_id,))
-            cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            cursor.execute("DELETE FROM operation_logs WHERE admin_id = %s", (user_id,))
+            cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
             log_operation(conn, admin["id"], "delete_user", "user", user_id,
                            detail=f"删除用户ID {user_id}")
 
@@ -302,7 +305,7 @@ def update_user_status(user_id: int, status: str, admin=Depends(require_admin)):
             # 不能禁用或冻结自己
             if user_id == admin["id"] and status in ("frozen", "disabled"):
                 raise HTTPException(status_code=400, detail="不能禁用或冻结自己的账号")
-            cursor.execute("SELECT is_super_admin, role FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT is_super_admin, role FROM users WHERE id = %s", (user_id,))
             target = cursor.fetchone()
             if not target:
                 raise HTTPException(status_code=404, detail="用户不存在")
@@ -314,7 +317,7 @@ def update_user_status(user_id: int, status: str, admin=Depends(require_admin)):
             if target["role"] == "admin" and not admin.get("is_super_admin", 0) and not target["is_super_admin"]:
                 raise HTTPException(status_code=403, detail="管理员之间不能互相操作")
 
-            cursor.execute("UPDATE users SET status = ? WHERE id = ?", (status, user_id))
+            cursor.execute("UPDATE users SET status = %s WHERE id = %s", (status, user_id))
             if cursor.rowcount == 0:
                 raise HTTPException(status_code=404, detail="用户不存在")
             log_operation(conn, admin["id"], "update_status", "user", user_id,
@@ -329,7 +332,7 @@ def reset_user_password(user_id: int, admin=Depends(require_admin)):
     """管理员重置用户密码为000000"""
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT is_super_admin FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT is_super_admin FROM users WHERE id = %s", (user_id,))
             target = cursor.fetchone()
             if target and target["is_super_admin"] and not admin.get("is_super_admin", 0):
                 raise HTTPException(status_code=403, detail="只有超管可以修改超管账号密码")
@@ -337,7 +340,7 @@ def reset_user_password(user_id: int, admin=Depends(require_admin)):
             new_password = "000000"
             password_hash = hash_password(new_password)
             cursor.execute(
-                "UPDATE users SET password_hash = ?, plain_password = ?, must_change_pwd = 1 WHERE id = ?",
+                "UPDATE users SET password_hash = %s, plain_password = %s, must_change_pwd = 1 WHERE id = %s",
                 (password_hash, new_password, user_id)
             )
             if cursor.rowcount == 0:
@@ -351,23 +354,23 @@ def reset_user_password(user_id: int, admin=Depends(require_admin)):
 def admin_bind_clan(req: AdminBindRequest, user_id: int, admin=Depends(require_admin)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id FROM clans WHERE code = ?", (req.clan_code,))
+            cursor.execute("SELECT id FROM clans WHERE code = %s", (req.clan_code,))
             existing_clan = cursor.fetchone()
             if not existing_clan:
                 cursor.execute(
-                    "INSERT INTO clans (name, code, contact) VALUES (?, ?, ?)",
+                    "INSERT INTO clans (name, code, contact) VALUES (%s, %s, %s)",
                     (req.clan_name, req.clan_code, req.contact)
                 )
                 clan_id = cursor.lastrowid
             else:
                 clan_id = existing_clan["id"]
 
-            cursor.execute("SELECT id FROM user_clan WHERE user_id = ? AND clan_id = ?", (user_id, clan_id))
+            cursor.execute("SELECT id FROM user_clan WHERE user_id = %s AND clan_id = %s", (user_id, clan_id))
             if cursor.fetchone():
                 raise HTTPException(status_code=400, detail="该用户已绑定此部落")
 
             cursor.execute(
-                "INSERT INTO user_clan (user_id, clan_id) VALUES (?, ?)",
+                "INSERT INTO user_clan (user_id, clan_id) VALUES (%s, %s)",
                 (user_id, clan_id)
             )
             log_operation(conn, admin["id"], "bind_clan", "user", user_id,
@@ -380,7 +383,7 @@ def admin_bind_clan(req: AdminBindRequest, user_id: int, admin=Depends(require_a
 def admin_unbind_clan(user_id: int, clan_id: int, admin=Depends(require_admin)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM user_clan WHERE user_id = ? AND clan_id = ?", (user_id, clan_id))
+            cursor.execute("DELETE FROM user_clan WHERE user_id = %s AND clan_id = %s", (user_id, clan_id))
             if cursor.rowcount == 0:
                 raise HTTPException(status_code=400, detail="该用户未绑定此部落")
             log_operation(conn, admin["id"], "unbind_clan", "user", user_id,
@@ -394,7 +397,7 @@ def admin_unbind_clan(user_id: int, clan_id: int, admin=Depends(require_admin)):
 def send_notification(req: SendNotificationRequest, admin=Depends(require_admin)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("INSERT INTO notifications (content) VALUES (?)", (req.content,))
+            cursor.execute("INSERT INTO notifications (content) VALUES (%s)", (req.content,))
             log_operation(conn, admin["id"], "send_notification", detail=req.content[:50])
     return {"message": "通知已发送"}
 
@@ -405,7 +408,7 @@ def send_notification(req: SendNotificationRequest, admin=Depends(require_admin)
 def set_super_admin(user_id: int, is_super: bool, admin=Depends(require_super_admin)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("UPDATE users SET is_super_admin = ? WHERE id = ?", (1 if is_super else 0, user_id))
+            cursor.execute("UPDATE users SET is_super_admin = %s WHERE id = %s", (1 if is_super else 0, user_id))
             if cursor.rowcount == 0:
                 raise HTTPException(status_code=404, detail="用户不存在")
             log_operation(conn, admin["id"], "set_super_admin", "user", user_id,
@@ -419,12 +422,12 @@ def set_super_admin(user_id: int, is_super: bool, admin=Depends(require_super_ad
 def adjust_score(clan_id: int, delta: int, reason: str = "", admin=Depends(require_admin)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT name, score FROM clans WHERE id = ?", (clan_id,))
+            cursor.execute("SELECT name, score FROM clans WHERE id = %s", (clan_id,))
             clan = cursor.fetchone()
             if not clan:
                 raise HTTPException(status_code=404, detail="部落不存在")
             new_score = clan["score"] + delta
-            cursor.execute("UPDATE clans SET score = ? WHERE id = ?", (new_score, clan_id))
+            cursor.execute("UPDATE clans SET score = %s WHERE id = %s", (new_score, clan_id))
             log_operation(conn, admin["id"], "adjust_score", "clan", clan_id,
                            detail=f"{clan['name']} 积分 {clan['score']} -> {new_score} (delta={delta})", reason=reason)
     return {"message": f"积分已调整，当前积分: {new_score}"}
