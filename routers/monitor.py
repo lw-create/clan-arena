@@ -13,7 +13,7 @@ def log_operation(db, admin_id: int, action: str, target_type: str = None,
     cursor = db.cursor()
     cursor.execute(
         "INSERT INTO operation_logs (admin_id, action, target_type, target_id, detail, reason) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (admin_id, action, target_type, target_id, detail, reason)
     )
 
@@ -37,7 +37,7 @@ def monitor_login(req: MonitorLoginRequest):
     with get_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "SELECT * FROM users WHERE username = ? AND role = 'monitor'",
+                "SELECT * FROM users WHERE username = %s AND role = 'monitor'",
                 (req.username,)
             )
             user = cursor.fetchone()
@@ -89,14 +89,14 @@ def update_super_admin_status(user_id: int, status: str, monitor=Depends(require
 
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
             target = cursor.fetchone()
             if not target:
                 raise HTTPException(status_code=404, detail="用户不存在")
             if target["role"] != "admin" or not target.get("is_super_admin", 0):
                 raise HTTPException(status_code=403, detail="只能操作超管账号")
 
-            cursor.execute("UPDATE users SET status = ? WHERE id = ?", (status, user_id))
+            cursor.execute("UPDATE users SET status = %s WHERE id = %s", (status, user_id))
             log_operation(
                 conn, monitor["id"], "monitor_update_status",
                 "user", user_id,
@@ -148,7 +148,7 @@ def delete_super_admin(user_id: int, monitor=Depends(require_monitor)):
     """监察员删除超管账号（谨慎操作）"""
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
             target = cursor.fetchone()
             if not target:
                 raise HTTPException(status_code=404, detail="用户不存在")
@@ -158,8 +158,8 @@ def delete_super_admin(user_id: int, monitor=Depends(require_monitor)):
             if target["id"] == monitor["id"]:
                 raise HTTPException(status_code=400, detail="不能删除自己的账号")
 
-            cursor.execute("DELETE FROM operation_logs WHERE admin_id = ?", (user_id,))
-            cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            cursor.execute("DELETE FROM operation_logs WHERE admin_id = %s", (user_id,))
+            cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
             log_operation(
                 conn, monitor["id"], "monitor_delete_user",
                 "user", user_id,
@@ -185,7 +185,7 @@ def monitor_change_password(req: ChangePasswordRequest, monitor=Depends(require_
     with get_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "UPDATE users SET password_hash = ?, plain_password = ?, must_change_pwd = 0 WHERE id = ?",
+                "UPDATE users SET password_hash = %s, plain_password = %s, must_change_pwd = 0 WHERE id = %s",
                 (new_hash, req.new_password, monitor["id"])
             )
     return {"message": "密码修改成功"}
