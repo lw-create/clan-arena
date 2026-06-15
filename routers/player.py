@@ -36,27 +36,27 @@ class MatchUnregisteredRequest(BaseModel):
 def bind_clan(req: BindClanRequest, user=Depends(get_current_user)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, name FROM clans WHERE code = ?", (req.clan_code,))
+            cursor.execute("SELECT id, name FROM clans WHERE code = %s", (req.clan_code,))
             clan = cursor.fetchone()
             if clan:
                 if clan["name"] != req.clan_name:
                     raise HTTPException(status_code=400, detail="部落代码与名称不匹配")
                 clan_id = clan["id"]
                 if req.contact:
-                    cursor.execute("UPDATE clans SET contact = ? WHERE id = ?", (req.contact, clan_id))
+                    cursor.execute("UPDATE clans SET contact = %s WHERE id = %s", (req.contact, clan_id))
             else:
                 cursor.execute(
-                    "INSERT INTO clans (name, code, contact) VALUES (?, ?, ?)",
+                    "INSERT INTO clans (name, code, contact) VALUES (%s, %s, %s)",
                     (req.clan_name, req.clan_code, req.contact)
                 )
                 clan_id = cursor.lastrowid
 
-            cursor.execute("SELECT id FROM user_clan WHERE user_id = ? AND clan_id = ?", (user["id"], clan_id))
+            cursor.execute("SELECT id FROM user_clan WHERE user_id = %s AND clan_id = %s", (user["id"], clan_id))
             if cursor.fetchone():
                 raise HTTPException(status_code=400, detail="已绑定该部落")
 
             cursor.execute(
-                "INSERT INTO user_clan (user_id, clan_id) VALUES (?, ?)",
+                "INSERT INTO user_clan (user_id, clan_id) VALUES (%s, %s)",
                 (user["id"], clan_id)
             )
 
@@ -67,7 +67,7 @@ def bind_clan(req: BindClanRequest, user=Depends(get_current_user)):
 def unbind_clan(clan_id: int, user=Depends(get_current_user)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM user_clan WHERE user_id = ? AND clan_id = ?", (user["id"], clan_id))
+            cursor.execute("DELETE FROM user_clan WHERE user_id = %s AND clan_id = %s", (user["id"], clan_id))
             if cursor.rowcount == 0:
                 raise HTTPException(status_code=400, detail="未绑定该部落")
     return {"message": "部落解绑成功"}
@@ -81,7 +81,7 @@ def get_my_clans(user=Depends(get_current_user)):
                 SELECT c.id, c.name, c.code, c.contact, c.score
                 FROM user_clan uc
                 JOIN clans c ON uc.clan_id = c.id
-                WHERE uc.user_id = ?
+                WHERE uc.user_id = %s
             """, (user["id"],))
             clans = cursor.fetchall()
     return {"clans": clans}
@@ -92,7 +92,7 @@ def leaderboard():
     with get_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "SELECT id, name, code, contact, score FROM clans WHERE code NOT LIKE ? ORDER BY score DESC",
+                "SELECT id, name, code, contact, score FROM clans WHERE code NOT LIKE %s ORDER BY score DESC",
                 ('UNREG_%',)
             )
             clans = cursor.fetchall()
@@ -106,7 +106,7 @@ def search_clan(req: SearchClanRequest, user=Depends(get_current_user)):
     with get_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "SELECT id, name, code, contact, score FROM clans WHERE (name LIKE ? OR code LIKE ?) AND code NOT LIKE ?",
+                "SELECT id, name, code, contact, score FROM clans WHERE (name LIKE %s OR code LIKE %s) AND code NOT LIKE %s",
                 (kw, kw, unreg)
             )
             results = cursor.fetchall()
@@ -123,7 +123,7 @@ def match_registered(req: MatchRegisteredRequest, user=Depends(get_current_user)
             if current_round and current_round.get("config_required") and not req.config_remark:
                 raise HTTPException(status_code=400, detail="本轮要求填写对战配置，请先填写配置信息")
 
-            cursor.execute("SELECT clan_id FROM user_clan WHERE user_id = ?", (user["id"],))
+            cursor.execute("SELECT clan_id FROM user_clan WHERE user_id = %s", (user["id"],))
             my_clans = cursor.fetchall()
             if not my_clans:
                 raise HTTPException(status_code=400, detail="请先绑定部落")
@@ -141,9 +141,9 @@ def match_registered(req: MatchRegisteredRequest, user=Depends(get_current_user)
                 if my_clan_id == req.clan_id:
                     raise HTTPException(status_code=400, detail="不能与自己部落匹配")
 
-            cursor.execute("SELECT id, name, score FROM clans WHERE id = ?", (my_clan_id,))
+            cursor.execute("SELECT id, name, score FROM clans WHERE id = %s", (my_clan_id,))
             my_clan = cursor.fetchone()
-            cursor.execute("SELECT id, name, score FROM clans WHERE id = ?", (req.clan_id,))
+            cursor.execute("SELECT id, name, score FROM clans WHERE id = %s", (req.clan_id,))
             opp_clan = cursor.fetchone()
             if not opp_clan:
                 raise HTTPException(status_code=404, detail="对方部落不存在")
@@ -154,9 +154,9 @@ def match_registered(req: MatchRegisteredRequest, user=Depends(get_current_user)
             if current_round:
                 cursor.execute("""
                     SELECT id FROM matches
-                    WHERE created_by = ?
-                      AND ((clan_a_id = ? AND clan_b_id = ?) OR (clan_a_id = ? AND clan_b_id = ?))
-                      AND matched_at >= (SELECT opened_at FROM rounds WHERE id = ?)
+                    WHERE created_by = %s
+                      AND ((clan_a_id = %s AND clan_b_id = %s) OR (clan_a_id = %s AND clan_b_id = %s))
+                      AND matched_at >= (SELECT opened_at FROM rounds WHERE id = %s)
                       AND is_registered = 1
                     LIMIT 1
                 """, (user["id"], my_clan_id, req.clan_id, req.clan_id, my_clan_id, current_round["id"]))
@@ -179,13 +179,13 @@ def match_registered(req: MatchRegisteredRequest, user=Depends(get_current_user)
                 winner_id = req.clan_id
                 loser_id = my_clan_id
 
-            cursor.execute("UPDATE clans SET score = score + 1 WHERE id = ?", (winner_id,))
-            cursor.execute("UPDATE clans SET score = score - 1 WHERE id = ?", (loser_id,))
+            cursor.execute("UPDATE clans SET score = score + 1 WHERE id = %s", (winner_id,))
+            cursor.execute("UPDATE clans SET score = score - 1 WHERE id = %s", (loser_id,))
 
             cursor.execute("""
                 INSERT INTO matches (clan_a_id, clan_b_id, winner_id, loser_id,
                                      score_before_a, score_before_b, is_registered, created_by, config_remark)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (my_clan_id, req.clan_id, winner_id, loser_id, score_a, score_b, 1, user["id"], req.config_remark or None))
 
             match_id = cursor.lastrowid
@@ -196,13 +196,13 @@ def match_registered(req: MatchRegisteredRequest, user=Depends(get_current_user)
             if current_round:
                 for uc in my_clans:
                     cursor.execute("""
-                        INSERT OR IGNORE INTO round_registrations (round_id, user_id, clan_id)
-                        VALUES (?, ?, ?)
+                        INSERT IGNORE INTO round_registrations (round_id, user_id, clan_id)
+                        VALUES (%s, %s, %s)
                     """, (current_round["id"], user["id"], uc["clan_id"]))
 
-            cursor.execute("SELECT name, score FROM clans WHERE id = ?", (winner_id,))
+            cursor.execute("SELECT name, score FROM clans WHERE id = %s", (winner_id,))
             winner = cursor.fetchone()
-            cursor.execute("SELECT name, score FROM clans WHERE id = ?", (loser_id,))
+            cursor.execute("SELECT name, score FROM clans WHERE id = %s", (loser_id,))
             loser = cursor.fetchone()
 
     return {
@@ -225,20 +225,20 @@ def match_unregistered(req: MatchUnregisteredRequest, user=Depends(get_current_u
             if current_round and current_round.get("config_required") and not req.config_remark:
                 raise HTTPException(status_code=400, detail="本轮要求填写对战配置，请先填写配置信息")
 
-            cursor.execute("SELECT clan_id FROM user_clan WHERE user_id = ?", (user["id"],))
+            cursor.execute("SELECT clan_id FROM user_clan WHERE user_id = %s", (user["id"],))
             my_clans = cursor.fetchall()
             if not my_clans:
                 raise HTTPException(status_code=400, detail="请先绑定部落")
             my_clan_id = my_clans[0]["clan_id"]
-            cursor.execute("SELECT id, name, score FROM clans WHERE id = ?", (my_clan_id,))
+            cursor.execute("SELECT id, name, score FROM clans WHERE id = %s", (my_clan_id,))
             my_clan = cursor.fetchone()
             score_before = my_clan["score"]
 
-            cursor.execute("UPDATE clans SET score = score - 1 WHERE id = ?", (my_clan_id,))
+            cursor.execute("UPDATE clans SET score = score - 1 WHERE id = %s", (my_clan_id,))
 
             temp_code = f"UNREG_{req.clan_code[:8]}_{user['id']}_{int(time.time() * 1000) % 100000}"
             cursor.execute(
-                "INSERT INTO clans (name, code, contact) VALUES (?, ?, ?)",
+                "INSERT INTO clans (name, code, contact) VALUES (%s, %s, %s)",
                 (req.clan_name, temp_code, "未登记部落")
             )
             temp_clan_id = cursor.lastrowid
@@ -246,24 +246,24 @@ def match_unregistered(req: MatchUnregisteredRequest, user=Depends(get_current_u
             # 写入陌生部落数据库 - SQLite UPSERT
             cursor.execute("""
                 INSERT INTO unknown_clans (name, code, tags, encounter_count, last_seen)
-                VALUES (?, ?, ?, 1, datetime('now'))
-                ON CONFLICT(code) DO UPDATE SET
-                    name = excluded.name,
-                    tags = CASE WHEN excluded.tags != '' THEN excluded.tags ELSE unknown_clans.tags END,
+                VALUES (%s, %s, %s, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    name = VALUES(name),
+                    tags = IF(VALUES(tags) != '', VALUES(tags), tags),
                     encounter_count = encounter_count + 1,
-                    last_seen = datetime('now')
+                    last_seen = NOW()
             """, (req.clan_name, req.clan_code, req.tags))
 
             cursor.execute("""
                 INSERT INTO matches (clan_a_id, clan_b_id, winner_id, loser_id,
                                      score_before_a, score_before_b, is_registered, remark, created_by, config_remark)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (my_clan_id, temp_clan_id, temp_clan_id, my_clan_id,
                   score_before, 0, 0, req.remark, user["id"], req.config_remark or None))
 
             match_id = cursor.lastrowid
 
-            cursor.execute("SELECT score FROM clans WHERE id = ?", (my_clan_id,))
+            cursor.execute("SELECT score FROM clans WHERE id = %s", (my_clan_id,))
             new_score = cursor.fetchone()["score"]
 
     return {
@@ -281,7 +281,7 @@ def match_unregistered(req: MatchUnregisteredRequest, user=Depends(get_current_u
 def cancel_match(match_id: int, user=Depends(get_current_user)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM matches WHERE id = ? AND created_by = ?", (match_id, user["id"]))
+            cursor.execute("SELECT * FROM matches WHERE id = %s AND created_by = %s", (match_id, user["id"]))
             match = cursor.fetchone()
             if not match:
                 raise HTTPException(status_code=404, detail="匹配记录不存在或非您创建")
@@ -290,14 +290,14 @@ def cancel_match(match_id: int, user=Depends(get_current_user)):
             cursor.execute("SELECT id FROM rounds WHERE status = 'open' ORDER BY id DESC LIMIT 1")
             current_round = cursor.fetchone()
             if current_round:
-                cursor.execute("SELECT opened_at FROM rounds WHERE id = ?", (current_round["id"],))
+                cursor.execute("SELECT opened_at FROM rounds WHERE id = %s", (current_round["id"],))
                 round_info = cursor.fetchone()
                 if round_info and match["matched_at"] < round_info["opened_at"]:
                     raise HTTPException(status_code=403, detail="不能撤销之前轮次的登记记录，只能撤销本轮的")
 
                 # 每轮只能撤销一次
                 cursor.execute(
-                    "SELECT cancel_count_round_id, cancel_count FROM users WHERE id = ?",
+                    "SELECT cancel_count_round_id, cancel_count FROM users WHERE id = %s",
                     (user["id"],)
                 )
                 cancel_info = cursor.fetchone()
@@ -310,26 +310,26 @@ def cancel_match(match_id: int, user=Depends(get_current_user)):
             is_unregistered = not match["is_registered"]
 
             if match["winner_id"] and match["loser_id"]:
-                cursor.execute("UPDATE clans SET score = score - 1 WHERE id = ?", (match["winner_id"],))
-                cursor.execute("UPDATE clans SET score = score + 1 WHERE id = ?", (match["loser_id"],))
+                cursor.execute("UPDATE clans SET score = score - 1 WHERE id = %s", (match["winner_id"],))
+                cursor.execute("UPDATE clans SET score = score + 1 WHERE id = %s", (match["loser_id"],))
 
             if is_unregistered:
                 for cid in [match["clan_a_id"], match["clan_b_id"]]:
-                    cursor.execute("SELECT code, name FROM clans WHERE id = ?", (cid,))
+                    cursor.execute("SELECT code, name FROM clans WHERE id = %s", (cid,))
                     clan_row = cursor.fetchone()
                     if clan_row and clan_row["code"].startswith("UNREG_"):
                         cursor.execute("""
-                            UPDATE unknown_clans SET encounter_count = MAX(0, encounter_count - 1)
-                            WHERE name = ?
+                            UPDATE unknown_clans SET encounter_count = GREATEST(0, encounter_count - 1)
+                            WHERE name = %s
                         """, (clan_row["name"],))
-                        cursor.execute("DELETE FROM clans WHERE id = ?", (cid,))
+                        cursor.execute("DELETE FROM clans WHERE id = %s", (cid,))
 
-            cursor.execute("DELETE FROM matches WHERE id = ?", (match_id,))
+            cursor.execute("DELETE FROM matches WHERE id = %s", (match_id,))
 
             # 更新撤销计数
             if current_round:
                 cursor.execute(
-                    "UPDATE users SET cancel_count_round_id = ?, cancel_count = COALESCE(cancel_count, 0) + 1 WHERE id = ?",
+                    "UPDATE users SET cancel_count_round_id = %s, cancel_count = COALESCE(cancel_count, 0) + 1 WHERE id = %s",
                     (current_round["id"], user["id"])
                 )
 
@@ -340,12 +340,12 @@ def cancel_match(match_id: int, user=Depends(get_current_user)):
 def confirm_match(match_id: int, user=Depends(get_current_user)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM matches WHERE id = ?", (match_id,))
+            cursor.execute("SELECT * FROM matches WHERE id = %s", (match_id,))
             match = cursor.fetchone()
             if not match:
                 raise HTTPException(status_code=404, detail="匹配记录不存在")
 
-            cursor.execute("UPDATE matches SET confirmed_by = ? WHERE id = ?", (user["id"], match_id))
+            cursor.execute("UPDATE matches SET confirmed_by = %s WHERE id = %s", (user["id"], match_id))
     return {"message": "匹配已确认"}
 
 
@@ -353,7 +353,7 @@ def confirm_match(match_id: int, user=Depends(get_current_user)):
 def match_history(clan_id: int = None, user=Depends(get_current_user)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT clan_id FROM user_clan WHERE user_id = ?", (user["id"],))
+            cursor.execute("SELECT clan_id FROM user_clan WHERE user_id = %s", (user["id"],))
             my_clans = cursor.fetchall()
             if not my_clans:
                 return {"matches": []}
@@ -379,7 +379,7 @@ def match_history(clan_id: int = None, user=Depends(get_current_user)):
             else:
                 query_clan_ids = my_clan_ids
 
-            in_placeholder = ",".join(["?"] * len(query_clan_ids))
+            in_placeholder = ",".join(["%s"] * len(query_clan_ids))
             cursor.execute(f"""
                 SELECT m.id, m.clan_a_id, m.clan_b_id, m.winner_id, m.loser_id,
                        m.score_before_a, m.score_before_b, m.is_registered, m.remark,
