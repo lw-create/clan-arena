@@ -12,7 +12,7 @@ def log_operation(db, admin_id: int, action: str, target_type: str = None,
     cursor = db.cursor()
     cursor.execute(
         "INSERT INTO operation_logs (admin_id, action, target_type, target_id, detail, reason) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (admin_id, action, target_type, target_id, detail, reason)
     )
 from datetime import datetime
@@ -37,7 +37,7 @@ def list_clans(admin=Depends(require_admin)):
                 SELECT c.id, c.name, c.code, c.contact, c.score, c.created_at,
                        (SELECT COUNT(*) FROM user_clan uc WHERE uc.clan_id = c.id) as member_count
                 FROM clans c
-                WHERE c.code NOT LIKE ?
+                WHERE c.code NOT LIKE %s
                 ORDER BY c.score DESC
             """, ('UNREG_%',))
             clans = cursor.fetchall()
@@ -88,7 +88,7 @@ def list_matches(admin=Depends(require_admin)):
 def match_stats(admin=Depends(require_admin)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) as total FROM clans WHERE code NOT LIKE ?", ('UNREG_%',))
+            cursor.execute("SELECT COUNT(*) as total FROM clans WHERE code NOT LIKE %s", ('UNREG_%',))
             total_clans = cursor.fetchone()["total"]
 
             cursor.execute("""
@@ -177,7 +177,7 @@ def open_round(req: RoundTimeRequest = None, admin=Depends(require_admin)):
 
             cursor.execute("""
                 INSERT INTO rounds (round_no, status, opened_by, match_start_time, match_end_time, next_round_time, config_required)
-                SELECT COALESCE(MAX(round_no), 0) + 1, 'open', ?, ?, ?, ?, ?
+                SELECT COALESCE(MAX(round_no), 0) + 1, 'open', %s, %s, %s, %s, %s
                 FROM rounds
             """, (admin["id"], match_start, match_end, next_round, 1 if config_req else 0))
             round_id = cursor.lastrowid
@@ -198,26 +198,26 @@ def update_round_settings(req: RoundTimeRequest, admin=Depends(require_admin)):
             updates = []
             params = []
             if req.match_start_time is not None:
-                updates.append("match_start_time = ?")
+                updates.append("match_start_time = %s")
                 params.append(req.match_start_time)
             if req.match_end_time is not None:
-                updates.append("match_end_time = ?")
+                updates.append("match_end_time = %s")
                 params.append(req.match_end_time)
             if req.next_round_time is not None:
-                updates.append("next_round_time = ?")
+                updates.append("next_round_time = %s")
                 params.append(req.next_round_time)
             if req.config_required is not None:
-                updates.append("config_required = ?")
+                updates.append("config_required = %s")
                 params.append(1 if req.config_required else 0)
             if req.maintenance is not None:
-                updates.append("maintenance = ?")
+                updates.append("maintenance = %s")
                 params.append(1 if req.maintenance else 0)
 
             if not updates:
                 raise HTTPException(status_code=400, detail="没有需要更新的字段")
 
             params.append(current["id"])
-            cursor.execute(f"UPDATE rounds SET {', '.join(updates)} WHERE id = ?", params)
+            cursor.execute(f"UPDATE rounds SET {', '.join(updates)} WHERE id = %s", params)
 
     return {"message": "轮次设置已更新"}
 
@@ -236,8 +236,8 @@ def close_round(admin=Depends(require_admin)):
 
             # 关闭当前轮次
             cursor.execute("""
-                UPDATE rounds SET status = 'closed', closed_by = ?, closed_at = datetime('now')
-                WHERE id = ?
+                UPDATE rounds SET status = 'closed', closed_by = %s, closed_at = NOW()
+                WHERE id = %s
             """, (admin["id"], current["id"]))
 
             # 查找连续7轮未登记的用户
@@ -251,7 +251,7 @@ def close_round(admin=Depends(require_admin)):
                 return {"message": f"第{current['round_no']}轮已关闭，未冻结用户（不足7轮记录）"}
 
             round_ids = tuple(r["id"] for r in recent_rounds)
-            in_placeholder = ",".join(["?"] * len(round_ids))
+            in_placeholder = ",".join(["%s"] * len(round_ids))
 
             cursor.execute(f"""
                 SELECT u.id, u.username
@@ -267,7 +267,7 @@ def close_round(admin=Depends(require_admin)):
             to_freeze = cursor.fetchall()
 
             for u in to_freeze:
-                cursor.execute("UPDATE users SET status = 'frozen' WHERE id = ?", (u["id"],))
+                cursor.execute("UPDATE users SET status = 'frozen' WHERE id = %s", (u["id"],))
                 frozen_count += 1
                 log_operation(conn, admin["id"], "auto_freeze", "user", u["id"],
                                detail=f"连续7轮未登记，自动冻结")
@@ -370,7 +370,7 @@ async def import_data(file: UploadFile = File(...), admin=Depends(require_admin)
     import_data_dict = backup["data"]
 
     with get_db() as conn:
-        conn.execute("PRAGMA foreign_keys = OFF")
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
         cursor = conn.cursor()
 
         try:
@@ -384,8 +384,8 @@ async def import_data(file: UploadFile = File(...), admin=Depends(require_admin)
                     continue
 
                 columns = list(rows[0].keys())
-                col_str = ", ".join(f'"{c}"' for c in columns)
-                placeholders = ", ".join(["?"] * len(columns))
+                col_str = ", ".join(f'`{c}`' for c in columns)
+                placeholders = ", ".join(["%s"] * len(columns))
 
                 cursor.execute(f"DELETE FROM {table}")
 
@@ -396,10 +396,10 @@ async def import_data(file: UploadFile = File(...), admin=Depends(require_admin)
                         values
                     )
 
-            conn.execute("PRAGMA foreign_keys = ON")
+            cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
 
         except Exception as e:
-            conn.execute("PRAGMA foreign_keys = ON")
+            cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
             raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
 
     imported_counts = {t: len(import_data_dict.get(t, [])) for t in IMPORT_ORDER if t in import_data_dict}
@@ -430,9 +430,9 @@ def update_score_guide(req: ScoreGuideRequest, admin=Depends(require_admin)):
             cursor.execute("SELECT id FROM score_guide ORDER BY id DESC LIMIT 1")
             existing = cursor.fetchone()
             if existing:
-                cursor.execute("UPDATE score_guide SET content = ?, updated_at = datetime('now') WHERE id = ?", (req.content, existing["id"]))
+                cursor.execute("UPDATE score_guide SET content = %s, updated_at = NOW() WHERE id = %s", (req.content, existing["id"]))
             else:
-                cursor.execute("INSERT INTO score_guide (content) VALUES (?)", (req.content,))
+                cursor.execute("INSERT INTO score_guide (content) VALUES (%s)", (req.content,))
             log_operation(conn, admin["id"], "update_score_guide", detail="更新积分操作指南")
     return {"message": "积分操作指南已更新"}
 
@@ -449,16 +449,16 @@ def round_clan_status(admin=Depends(require_admin)):
             if not current_round:
                 return {"current_round": None, "clan_status": [], "inactive_clans": []}
 
-            cursor.execute("SELECT id, name, code, contact, score FROM clans WHERE code NOT LIKE ? ORDER BY name", ('UNREG_%',))
+            cursor.execute("SELECT id, name, code, contact, score FROM clans WHERE code NOT LIKE %s ORDER BY name", ('UNREG_%',))
             all_clans = cursor.fetchall()
             clan_ids = [c["id"] for c in all_clans]
 
             if clan_ids:
-                in_placeholder = ",".join(["?"] * len(clan_ids))
+                in_placeholder = ",".join(["%s"] * len(clan_ids))
                 cursor.execute(f"""
                     SELECT m.clan_a_id, m.clan_b_id, m.is_registered, m.matched_at
                     FROM matches m
-                    WHERE m.matched_at >= ?
+                    WHERE m.matched_at >= %s
                       AND (m.clan_a_id IN ({in_placeholder}) OR m.clan_b_id IN ({in_placeholder}))
                 """, [current_round["opened_at"]] + clan_ids + clan_ids)
                 round_matches = cursor.fetchall()
@@ -467,7 +467,7 @@ def round_clan_status(admin=Depends(require_admin)):
 
             cursor.execute("""
                 SELECT DISTINCT rr.clan_id FROM round_registrations rr
-                WHERE rr.round_id = ?
+                WHERE rr.round_id = %s
             """, (current_round["id"],))
             registered_clan_ids = set(r["clan_id"] for r in cursor.fetchall())
 
@@ -506,13 +506,13 @@ def round_clan_status(admin=Depends(require_admin)):
 
             inactive_clans = []
             if len(recent_round_ids) >= 3:
-                in_placeholder_r = ",".join(["?"] * len(recent_round_ids))
+                in_placeholder_r = ",".join(["%s"] * len(recent_round_ids))
                 cursor.execute(f"""
                     SELECT c.id, c.name, c.code,
                            (SELECT COUNT(DISTINCT rr.round_id)
                             FROM round_registrations rr WHERE rr.clan_id = c.id AND rr.round_id IN ({in_placeholder_r})) as active_rounds
                     FROM clans c
-                    WHERE c.code NOT LIKE ?
+                    WHERE c.code NOT LIKE %s
                     ORDER BY active_rounds ASC, c.name
                 """, recent_round_ids + ['UNREG_%'])
                 clan_activity = cursor.fetchall()
