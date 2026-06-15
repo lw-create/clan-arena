@@ -44,6 +44,42 @@ def list_clans(admin=Depends(require_admin)):
     return {"clans": clans}
 
 
+@router.post("/score/adjust")
+def adjust_score(clan_id: int, delta: int, reason: str, admin=Depends(require_admin)):
+    reason = (reason or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="请填写调整理由")
+
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, name, score FROM clans WHERE id = %s", (clan_id,))
+            clan = cursor.fetchone()
+            if not clan:
+                raise HTTPException(status_code=404, detail="部落不存在")
+
+            before_score = clan["score"]
+            after_score = before_score + delta
+            cursor.execute("UPDATE clans SET score = %s WHERE id = %s", (after_score, clan_id))
+            log_operation(
+                conn,
+                admin["id"],
+                "adjust_score",
+                "clan",
+                clan_id,
+                f"调整部落 {clan['name']} 积分：{before_score} -> {after_score}（{delta:+d}）",
+                reason,
+            )
+
+    return {
+        "message": "积分调整成功",
+        "clan_id": clan_id,
+        "clan_name": clan["name"],
+        "before": before_score,
+        "after": after_score,
+        "delta": delta,
+    }
+
+
 @router.get("/matches")
 def list_matches(admin=Depends(require_admin)):
     with get_db() as conn:
