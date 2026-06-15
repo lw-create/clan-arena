@@ -40,7 +40,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
             user = cursor.fetchone()
 
     if user is None:
@@ -56,7 +56,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 
 
 def require_admin(user=Depends(get_current_user)):
-    if user["role"] not in ("admin", "monitor"):
+    if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")
     return user
 
