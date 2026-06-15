@@ -1,68 +1,64 @@
-import sqlite3
 import os
+import ssl
 from contextlib import contextmanager
 
-DB_PATH = os.environ.get("CLAN_ARENA_DB", "clan_arena.db")
+import pymysql
 
 
-class CursorContextManager:
-    """让 sqlite3.Cursor 支持 with 语句，兼容 pymysql 的用法，同时代理所有 cursor 方法"""
-    def __init__(self, cursor):
-        self._cursor = cursor
+def _config():
+    cfg = {
+        "host": os.environ.get("DB_HOST", "localhost"),
+        "port": int(os.environ.get("DB_PORT", "4000" if os.environ.get("DB_HOST") else "3306")),
+        "user": os.environ.get("DB_USER", "root"),
+        "password": os.environ.get("DB_PASSWORD", ""),
+        "database": os.environ.get("DB_NAME", "clan_arena"),
+        "charset": "utf8mb4",
+        "cursorclass": pymysql.cursors.DictCursor,
+        "autocommit": False,
+        "connect_timeout": 10,
+    }
+    if os.environ.get("DB_SSL", "").lower() in {"1", "true", "yes"} or "tidbcloud.com" in cfg["host"]:
+        cfg["ssl"] = ssl.create_default_context()
+    return cfg
+
+
+class CompatCursor:
+    def __init__(self, cur):
+        self.cur = cur
 
     def __enter__(self):
-        return self._cursor
+        return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        pass  # sqlite3 cursor 不需要显式关闭
+    def __exit__(self, *args):
+        self.cur.close()
 
     def __getattr__(self, name):
-        """代理所有未定义的属性/方法到底层 cursor"""
-        return getattr(self._cursor, name)
+        return getattr(self.cur, name)
+
+    def execute(self, sql, args=None):
+        if isinstance(sql, str):
+            sql = sql.replace("?", "%s")
+        return self.cur.execute(sql, args)
+
+    def executemany(self, sql, args=None):
+        if isinstance(sql, str):
+            sql = sql.replace("?", "%s")
+        return self.cur.executemany(sql, args)
 
 
-def dict_factory(cursor, row):
-    """让 SQLite 返回字典格式结果"""
-    fields = [column[0] for column in cursor.description]
-    return dict(zip(fields, row))
-
-
-class SqliteConnectionWrapper:
-    """包装 sqlite3.Connection，让 cursor() 返回上下文管理器"""
+class CompatConn:
     def __init__(self, conn):
-        self._conn = conn
+        self.conn = conn
 
-    def cursor(self):
-        return CursorContextManager(self._conn.cursor())
+    def __getattr__(self, name):
+        return getattr(self.conn, name)
 
-    def execute(self, sql, params=None):
-        if params:
-            return self._conn.execute(sql, params)
-        return self._conn.execute(sql)
-
-    def commit(self):
-        return self._conn.commit()
-
-    def rollback(self):
-        return self._conn.rollback()
-
-    def close(self):
-        return self._conn.close()
-
-    @property
-    def row_factory(self):
-        return self._conn.row_factory
-
-    @row_factory.setter
-    def row_factory(self, value):
-        self._conn.row_factory = value
+    def cursor(self, *args, **kwargs):
+        return CompatCursor(self.conn.cursor(*args, **kwargs))
 
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = dict_factory
-    conn.execute("PRAGMA foreign_keys = ON")
-    return SqliteConnectionWrapper(conn)
+    return CompatConn(pymysql.connect(**_config()))
 
 
 @contextmanager
@@ -78,155 +74,132 @@ def get_db():
         conn.close()
 
 
+TABLES = [
+    """CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        plain_password VARCHAR(100) DEFAULT '',
+        role ENUM('player','admin','monitor') DEFAULT 'player',
+        is_super_admin BOOLEAN DEFAULT FALSE,
+        status ENUM('active','frozen','disabled') DEFAULT 'active',
+        must_change_pwd BOOLEAN DEFAULT TRUE,
+        cancel_count_round_id INT DEFAULT NULL,
+        cancel_count INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS clans (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        code VARCHAR(50) UNIQUE NOT NULL,
+        contact VARCHAR(200) DEFAULT '',
+        score INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS user_clan (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        clan_id INT NOT NULL,
+        bound_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_user_clan (user_id, clan_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS matches (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        clan_a_id INT NOT NULL,
+        clan_b_id INT NOT NULL,
+        winner_id INT,
+        loser_id INT,
+        score_before_a INT,
+        score_before_b INT,
+        is_registered BOOLEAN DEFAULT TRUE,
+        remark TEXT,
+        config_remark VARCHAR(500) DEFAULT NULL,
+        created_by INT,
+        confirmed_by INT DEFAULT NULL,
+        matched_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS notifications (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        content TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS operation_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        admin_id INT NOT NULL,
+        action VARCHAR(50) NOT NULL,
+        target_type VARCHAR(50),
+        target_id INT,
+        detail TEXT,
+        reason VARCHAR(200),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS unknown_clans (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        code VARCHAR(50) NOT NULL,
+        tags VARCHAR(200) DEFAULT '',
+        encounter_count INT DEFAULT 1,
+        last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_code (code)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS rounds (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        round_no INT NOT NULL,
+        status ENUM('open','closed') DEFAULT 'open',
+        opened_by INT,
+        closed_by INT DEFAULT NULL,
+        opened_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        closed_at DATETIME DEFAULT NULL,
+        match_start_time DATETIME DEFAULT NULL,
+        match_end_time DATETIME DEFAULT NULL,
+        next_round_time DATETIME DEFAULT NULL,
+        config_required BOOLEAN DEFAULT FALSE,
+        maintenance BOOLEAN DEFAULT FALSE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS round_registrations (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        round_id INT NOT NULL,
+        user_id INT NOT NULL,
+        clan_id INT NOT NULL,
+        registered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_round_user_clan (round_id, user_id, clan_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS score_guide (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        content TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+]
+
+
+MIGRATIONS = [
+    "ALTER TABLE users MODIFY COLUMN role ENUM('player','admin','monitor') DEFAULT 'player'",
+    "ALTER TABLE users ADD COLUMN is_super_admin BOOLEAN DEFAULT FALSE AFTER role",
+    "ALTER TABLE users ADD COLUMN must_change_pwd BOOLEAN DEFAULT TRUE AFTER status",
+    "ALTER TABLE users ADD COLUMN cancel_count_round_id INT DEFAULT NULL AFTER must_change_pwd",
+    "ALTER TABLE users ADD COLUMN cancel_count INT DEFAULT 0 AFTER cancel_count_round_id",
+    "ALTER TABLE matches ADD COLUMN created_by INT AFTER remark",
+    "ALTER TABLE matches ADD COLUMN confirmed_by INT DEFAULT NULL AFTER created_by",
+    "ALTER TABLE matches ADD COLUMN config_remark VARCHAR(500) DEFAULT NULL AFTER remark",
+    "ALTER TABLE rounds ADD COLUMN match_start_time DATETIME DEFAULT NULL AFTER closed_at",
+    "ALTER TABLE rounds ADD COLUMN match_end_time DATETIME DEFAULT NULL AFTER match_start_time",
+    "ALTER TABLE rounds ADD COLUMN next_round_time DATETIME DEFAULT NULL AFTER match_end_time",
+    "ALTER TABLE rounds ADD COLUMN config_required BOOLEAN DEFAULT FALSE AFTER next_round_time",
+    "ALTER TABLE rounds ADD COLUMN maintenance BOOLEAN DEFAULT FALSE AFTER config_required",
+]
+
+
 def init_db():
     with get_db() as conn:
-        cursor = conn.cursor()
-        # users 表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                plain_password TEXT DEFAULT '',
-                role TEXT DEFAULT 'player' CHECK(role IN ('player', 'admin', 'monitor')),
-                is_super_admin INTEGER DEFAULT 0,
-                status TEXT DEFAULT 'active' CHECK(status IN ('active', 'frozen', 'disabled')),
-                must_change_pwd INTEGER DEFAULT 1,
-                cancel_count_round_id INTEGER DEFAULT NULL,
-                cancel_count INTEGER DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        # clans 表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS clans (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                code TEXT UNIQUE NOT NULL,
-                contact TEXT DEFAULT '',
-                score INTEGER DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        # user_clan 表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS user_clan (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                clan_id INTEGER NOT NULL,
-                bound_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user_id, clan_id),
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY (clan_id) REFERENCES clans(id) ON DELETE CASCADE
-            )
-        """)
-        # matches 表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS matches (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                clan_a_id INTEGER NOT NULL,
-                clan_b_id INTEGER NOT NULL,
-                winner_id INTEGER,
-                loser_id INTEGER,
-                score_before_a INTEGER,
-                score_before_b INTEGER,
-                is_registered INTEGER DEFAULT 1,
-                remark TEXT,
-                config_remark TEXT DEFAULT NULL,
-                created_by INTEGER,
-                confirmed_by INTEGER DEFAULT NULL,
-                matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (clan_a_id) REFERENCES clans(id),
-                FOREIGN KEY (clan_b_id) REFERENCES clans(id),
-                FOREIGN KEY (created_by) REFERENCES users(id)
-            )
-        """)
-        # notifications 表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS notifications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                content TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        # operation_logs 表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS operation_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                admin_id INTEGER NOT NULL,
-                action TEXT NOT NULL,
-                target_type TEXT,
-                target_id INTEGER,
-                detail TEXT,
-                reason TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (admin_id) REFERENCES users(id)
-            )
-        """)
-        # unknown_clans 表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS unknown_clans (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                code TEXT NOT NULL UNIQUE,
-                tags TEXT DEFAULT '',
-                encounter_count INTEGER DEFAULT 1,
-                last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        # rounds 表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS rounds (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                round_no INTEGER NOT NULL,
-                status TEXT DEFAULT 'open' CHECK(status IN ('open', 'closed')),
-                opened_by INTEGER,
-                closed_by INTEGER DEFAULT NULL,
-                opened_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                closed_at DATETIME DEFAULT NULL,
-                match_start_time DATETIME DEFAULT NULL,
-                match_end_time DATETIME DEFAULT NULL,
-                next_round_time DATETIME DEFAULT NULL,
-                config_required INTEGER DEFAULT 0,
-                maintenance INTEGER DEFAULT 0,
-                FOREIGN KEY (opened_by) REFERENCES users(id)
-            )
-        """)
-        # round_registrations 表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS round_registrations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                round_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                clan_id INTEGER NOT NULL,
-                registered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(round_id, user_id, clan_id),
-                FOREIGN KEY (round_id) REFERENCES rounds(id) ON DELETE CASCADE,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY (clan_id) REFERENCES clans(id) ON DELETE CASCADE
-            )
-        """)
-        # match_queue 表（匹配队列）
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS match_queue (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL UNIQUE,
-                clan_id INTEGER NOT NULL,
-                joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id),
-                FOREIGN KEY (clan_id) REFERENCES clans(id)
-            )
-        """)
-        # score_guide 表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS score_guide (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                content TEXT NOT NULL,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
+        with conn.cursor() as cursor:
+            for sql in TABLES:
+                cursor.execute(sql)
+            for sql in MIGRATIONS:
+                try:
+                    cursor.execute(sql)
+                except Exception:
+                    pass
 
 
 if __name__ == "__main__":
