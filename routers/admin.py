@@ -1,3 +1,5 @@
+import json
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -15,8 +17,6 @@ def log_operation(db, admin_id: int, action: str, target_type: str = None,
         "VALUES (%s, %s, %s, %s, %s, %s)",
         (admin_id, action, target_type, target_id, detail, reason)
     )
-from datetime import datetime
-import json
 
 router = APIRouter(prefix="/api/admin", tags=["管理员"])
 
@@ -97,11 +97,12 @@ def list_matches(admin=Depends(require_admin)):
                        m.score_before_a, m.score_before_b, m.is_registered, m.remark,
                        m.config_remark, m.matched_at, m.created_by, m.confirmed_by,
                        ca.name as clan_a_name, cb.name as clan_b_name,
-                       cw.name as winner_name
+                       cw.name as winner_name, cl.name as loser_name
                 FROM matches m
                 JOIN clans ca ON m.clan_a_id = ca.id
                 JOIN clans cb ON m.clan_b_id = cb.id
-                JOIN clans cw ON m.winner_id = cw.id
+                LEFT JOIN clans cw ON m.winner_id = cw.id
+                LEFT JOIN clans cl ON m.loser_id = cl.id
                 ORDER BY m.matched_at DESC
                 LIMIT 100
             """)

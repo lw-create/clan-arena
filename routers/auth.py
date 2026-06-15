@@ -130,7 +130,7 @@ def get_me(user=Depends(get_current_user)):
                         WHERE m.matched_at >= %s
                           AND (m.clan_a_id IN ({in_placeholder}) OR m.clan_b_id IN ({in_placeholder}))
                         ORDER BY m.matched_at DESC LIMIT 1
-                    """, (current_round["start_time"], *clan_ids, *clan_ids))
+                    """, (current_round["opened_at"], *clan_ids, *clan_ids))
                     active_match = cursor.fetchone()
                     if active_match:
                         has_active_match = True
