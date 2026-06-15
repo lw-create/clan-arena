@@ -5,19 +5,24 @@ from contextlib import contextmanager
 import pymysql
 
 
+def _env(name, default=""):
+    return os.environ.get(name, default).strip()
+
+
 def _config():
+    db_host = _env("DB_HOST", "localhost")
     cfg = {
-        "host": os.environ.get("DB_HOST", "localhost"),
-        "port": int(os.environ.get("DB_PORT", "4000" if os.environ.get("DB_HOST") else "3306")),
-        "user": os.environ.get("DB_USER", "root"),
-        "password": os.environ.get("DB_PASSWORD", ""),
-        "database": os.environ.get("DB_NAME", "clan_arena"),
+        "host": db_host,
+        "port": int(_env("DB_PORT", "4000" if db_host else "3306")),
+        "user": _env("DB_USER", "root"),
+        "password": _env("DB_PASSWORD", ""),
+        "database": _env("DB_NAME", "clan_arena"),
         "charset": "utf8mb4",
         "cursorclass": pymysql.cursors.DictCursor,
         "autocommit": False,
         "connect_timeout": 10,
     }
-    if os.environ.get("DB_SSL", "").lower() in {"1", "true", "yes"} or "tidbcloud.com" in cfg["host"]:
+    if _env("DB_SSL").lower() in {"1", "true", "yes"} or "tidbcloud.com" in cfg["host"]:
         cfg["ssl"] = ssl.create_default_context()
     return cfg
 
