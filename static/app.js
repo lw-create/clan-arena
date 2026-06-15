@@ -565,17 +565,23 @@ async function loadMonitorSuperAdmins() {
             el.innerHTML = '<p class="empty-text">暂无超管账号</p>';
             return;
         }
-        let html = '<table class="data-table"><tr><th>ID</th><th>用户名</th><th>状态</th><th>操作</th></tr>';
+        let html = '<table class="data-table"><tr><th>ID</th><th>用户名</th><th>状态</th><th>需改密码</th><th>创建时间</th><th>操作</th></tr>';
         for (const u of data.super_admins) {
-            const statusText = u.status === 'active' ? '<span style="color:green">正常</span>' : '<span style="color:red">已冻结</span>';
+            const statusText = u.status === 'active'
+                ? '<span style="color:green">正常</span>'
+                : (u.status === 'frozen' ? '<span style="color:#b7791f">已冻结</span>' : '<span style="color:red">已禁用</span>');
+            const safeName = escapeAttr(u.username);
             html += `<tr>
                 <td>${u.id}</td>
                 <td>${escapeHTML(u.username)}</td>
                 <td>${statusText}</td>
+                <td>${u.must_change_pwd ? '是' : '否'}</td>
+                <td>${formatDate(u.created_at)}</td>
                 <td>
-                    ${u.status === 'active' ? `<button class="btn btn-sm btn-warning" onclick="monitorFreeze(${u.id},'${escapeHTML(u.username)}')">冻结</button> ` : `<button class="btn btn-sm" onclick="monitorUnfreeze(${u.id},'${escapeHTML(u.username)}')">解冻</button> `}
-                    <button class="btn btn-sm" onclick="monitorResetPwd(${u.id},'${escapeHTML(u.username)}')">重置密码</button>
-                    <button class="btn btn-sm btn-danger" onclick="monitorDelete(${u.id},'${escapeHTML(u.username)}')">删除</button>
+                    ${u.status === 'active' ? `<button class="btn btn-sm btn-warning" onclick="monitorSetStatus(${u.id},'${safeName}','frozen')">冻结</button> ` : `<button class="btn btn-sm btn-success" onclick="monitorSetStatus(${u.id},'${safeName}','active')">恢复</button> `}
+                    ${u.status !== 'disabled' ? `<button class="btn btn-sm btn-danger" onclick="monitorSetStatus(${u.id},'${safeName}','disabled')">禁用</button> ` : ''}
+                    <button class="btn btn-sm" onclick="monitorChangeSuperAdminPwd(${u.id},'${safeName}')">修改密码</button>
+                    <button class="btn btn-sm btn-danger" onclick="monitorDelete(${u.id},'${safeName}')">删除</button>
                 </td>
             </tr>`;
         }
@@ -584,24 +590,21 @@ async function loadMonitorSuperAdmins() {
     } catch {}
 }
 
-async function monitorFreeze(id, name) {
-    if (!await customConfirm(`确认冻结超管【${name}】？`, '冻结')) return;
-    await api('PUT', `/monitor/super-admins/${id}/status?status=frozen`);
-    alert('冻结成功！');
+async function monitorSetStatus(id, name, status) {
+    const actionText = status === 'frozen' ? '冻结' : (status === 'disabled' ? '禁用' : '恢复');
+    if (!await customConfirm(`确认${actionText}超管【${name}】？`, actionText)) return;
+    await api('PUT', `/monitor/super-admins/${id}/status?status=${status}`);
+    alert(`${actionText}成功！`);
     loadMonitorSuperAdmins();
 }
 
-async function monitorUnfreeze(id, name) {
-    if (!await customConfirm(`确认解冻超管【${name}】？`, '解冻')) return;
-    await api('PUT', `/monitor/super-admins/${id}/status?status=active`);
-    alert('解冻成功！');
-    loadMonitorSuperAdmins();
-}
-
-async function monitorResetPwd(id, name) {
-    if (!await customConfirm(`确认重置超管【${name}】的密码为000000？`, '重置密码')) return;
-    await api('PUT', `/monitor/super-admins/${id}/password`);
-    alert('密码已重置为000000，请通知超管登录后修改密码');
+async function monitorChangeSuperAdminPwd(id, name) {
+    const newPassword = prompt(`请输入超管【${name}】的新密码（至少6位）`);
+    if (newPassword === null) return;
+    if (newPassword.trim().length < 6) { alert('新密码至少需要6位'); return; }
+    if (!await customConfirm(`确认修改超管【${name}】的密码？`, '修改密码')) return;
+    await api('PUT', `/monitor/super-admins/${id}/password`, { new_password: newPassword.trim() });
+    alert('密码修改成功，请通知超管使用新密码登录');
     loadMonitorSuperAdmins();
 }
 
