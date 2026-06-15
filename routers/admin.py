@@ -370,8 +370,8 @@ async def import_data(file: UploadFile = File(...), admin=Depends(require_admin)
     import_data_dict = backup["data"]
 
     with get_db() as conn:
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
         cursor = conn.cursor()
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
 
         try:
             for table in IMPORT_ORDER:
