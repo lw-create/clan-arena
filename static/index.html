@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>部落对战积分系统</title>
-    <link rel="stylesheet" href="/static/style.css?v=11">
+    <link rel="stylesheet" href="/static/style.css?v=13">
 </head>
 <body>
     <div id="app">
@@ -143,6 +143,29 @@
                     <h2>📋 对战记录</h2>
                     <div id="match-history"></div>
                 </div>
+            </div>
+        </div>
+
+        <!-- 监察员面板 -->
+        <div id="monitor-page" class="page">
+            <nav class="navbar">
+                <span class="nav-title">🛡️ 监察员面板</span>
+                <div class="nav-right">
+                    <span id="monitor-username"></span>
+                    <button class="btn btn-sm" onclick="logout()">退出</button>
+                </div>
+            </nav>
+
+            <div class="container">
+                <div class="card">
+                    <h2>👑 超管账号管理</h2>
+                    <p class="hint-text" id="monitor-super-count"></p>
+                    <div class="card-actions">
+                        <button class="btn btn-primary btn-sm" onclick="showCreateSuperAdmin()">➕ 新增超管</button>
+                        <button class="btn btn-sm" onclick="loadMonitorDashboard()">🔄 刷新</button>
+                    </div>
+                </div>
+                <div id="monitor-super-list"></div>
             </div>
         </div>
 
@@ -394,6 +417,6 @@
 
     </div>
 
-    <script src="/static/app.js?v=18"></script>
+    <script src="/static/app.js?v=20"></script>
 </body>
 </html>

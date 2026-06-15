@@ -83,8 +83,8 @@ async function loadDashboard(user) {
         catch { logout(); return; }
     }
     if (user.role === 'monitor') {
-        document.getElementById('admin-username').textContent = user.username + '（监察员）';
-        showPage('admin-page');
+        document.getElementById('monitor-username').textContent = user.username;
+        showPage('monitor-page');
         loadMonitorDashboard();
     } else if (user.role === 'admin') {
         document.getElementById('admin-username').textContent = user.username;
@@ -535,72 +535,15 @@ async function safeLoadAdminOptional(fn, label) {
 }
 
 async function loadMonitorDashboard() {
-    // 监察员界面：隐藏普通管理员后台，只显示超管管理
-    const adminContent = document.getElementById('admin-content');
-    if (adminContent) adminContent.style.display = 'none';
-
-    document.getElementById('admin-username').textContent = currentUser.username + '（监察员）';
-
-    // 创建独立的 monitor 内容区
-    let content = `
-        <div id="monitor-super">
-            <div class="card">
-                <h2>🔐 超管账号管理</h2>
-                <p class="hint-text" id="monitor-super-count"></p>
-                <div class="card-actions">
-                    <button class="btn btn-primary btn-sm" onclick="showCreateSuperAdmin()">➕ 新增超管</button>
-                    <button class="btn btn-sm" onclick="loadMonitorSuperAdmins()">🔄 刷新</button>
-                </div>
-            </div>
-            <div id="monitor-super-list"></div>
-        </div>
-
-        <div id="monitor-pwd">
-            <div class="card">
-                <h2>🔑 修改我的密码</h2>
-                <p class="hint-text">修改监察员账号登录密码</p>
-                <div class="form-group">
-                    <label>原密码</label>
-                    <input type="password" id="monitor-old-pwd-input" placeholder="请输入原密码">
-                </div>
-                <div class="form-group">
-                    <label>新密码</label>
-                    <input type="password" id="monitor-new-pwd-input" placeholder="请输入新密码（至少6位）">
-                </div>
-                <button class="btn btn-primary" onclick="monitorChangeOwnPwd()">修改密码</button>
-            </div>
-        </div>
-    `;
-
-    let monitorContent = document.getElementById('monitor-content');
-    if (!monitorContent) {
-        monitorContent = document.createElement('div');
-        monitorContent.id = 'monitor-content';
-        const container = document.querySelector('.container');
-        if (container && container.parentNode) {
-            container.parentNode.insertBefore(monitorContent, container.nextSibling);
-        } else {
-            document.body.appendChild(monitorContent);
-        }
-    }
-    monitorContent.innerHTML = content;
-    monitorContent.style.display = 'block';
-
-    loadMonitorSuperAdmins();
-}
-
-async function loadMonitorSuperAdmins() {
     try {
-        const data = await api('GET', '/monitor/super-admins', null, { silent: true });
+        const data = await api('GET', '/monitor/super-admins');
         const countEl = document.getElementById('monitor-super-count');
         if (countEl) countEl.innerHTML = `当前超管数量：<strong>${data.total || 0} / 2</strong>（最多 2 个）`;
-
         const el = document.getElementById('monitor-super-list');
         if (!data.super_admins || data.super_admins.length === 0) {
             el.innerHTML = '<div class="card"><p class="empty-text">暂无超管账号</p></div>';
             return;
         }
-
         let html = '';
         for (const u of data.super_admins) {
             let statusBadge = '';
@@ -609,22 +552,17 @@ async function loadMonitorSuperAdmins() {
                 statusBadge = '<span class="badge badge-active">正常</span>';
                 actions = `
                     <button class="btn btn-sm" onclick="monitorSetStatus(${u.id},'${escapeAttr(u.username)}','frozen')">冻结</button>
-                    <button class="btn btn-sm btn-danger" onclick="monitorSetStatus(${u.id},'${escapeAttr(u.username)}','disabled')">禁用</button>
-                `;
+                    <button class="btn btn-sm btn-danger" onclick="monitorSetStatus(${u.id},'${escapeAttr(u.username)}','disabled')">禁用</button>`;
             } else if (u.status === 'frozen') {
                 statusBadge = '<span class="badge badge-frozen">已冻结</span>';
                 actions = `
                     <button class="btn btn-sm btn-success" onclick="monitorSetStatus(${u.id},'${escapeAttr(u.username)}','active')">恢复</button>
-                    <button class="btn btn-sm btn-danger" onclick="monitorSetStatus(${u.id},'${escapeAttr(u.username)}','disabled')">禁用</button>
-                `;
+                    <button class="btn btn-sm btn-danger" onclick="monitorSetStatus(${u.id},'${escapeAttr(u.username)}','disabled')">禁用</button>`;
             } else if (u.status === 'disabled') {
                 statusBadge = '<span class="badge badge-disabled">已禁用</span>';
-                actions = `
-                    <button class="btn btn-sm btn-success" onclick="monitorSetStatus(${u.id},'${escapeAttr(u.username)}','active')">恢复</button>
-                `;
+                actions = `<button class="btn btn-sm btn-success" onclick="monitorSetStatus(${u.id},'${escapeAttr(u.username)}','active')">恢复</button>`;
             }
             const pwdFlag = u.must_change_pwd ? ' <span class="badge" style="background:rgba(245,158,11,0.2);color:#f59e0b">需改密码</span>' : '';
-
             html += `
                 <div class="card admin-card">
                     <div class="admin-card-header">
@@ -641,8 +579,7 @@ async function loadMonitorSuperAdmins() {
                         <button class="btn btn-sm" onclick="monitorChangeSuperAdminPwd(${u.id},'${escapeAttr(u.username)}')">修改密码</button>
                         <button class="btn btn-sm btn-danger" onclick="monitorDelete(${u.id},'${escapeAttr(u.username)}')">删除</button>
                     </div>
-                </div>
-            `;
+                </div>`;
         }
         el.innerHTML = html;
     } catch (e) {
@@ -658,11 +595,9 @@ async function showCreateSuperAdmin() {
     if (password === null) return;
     if (password.trim().length < 6) { alert('密码至少需要6位'); return; }
     try {
-        await api('POST', '/monitor/super-admins', {
-            username: username.trim(), password: password.trim()
-        });
+        await api('POST', '/monitor/super-admins', { username: username.trim(), password: password.trim() });
         alert('超管账号创建成功！');
-        loadMonitorSuperAdmins();
+        loadMonitorDashboard();
     } catch {}
 }
 
@@ -672,7 +607,7 @@ async function monitorSetStatus(id, name, status) {
     try {
         await api('PUT', `/monitor/super-admins/${id}/status?status=${status}`);
         alert(`${actionText}成功！`);
-        loadMonitorSuperAdmins();
+        loadMonitorDashboard();
     } catch {}
 }
 
@@ -683,7 +618,7 @@ async function monitorChangeSuperAdminPwd(id, name) {
     if (!await customConfirm(`确认修改超管【${name}】的密码？`, '修改密码')) return;
     try {
         await api('PUT', `/monitor/super-admins/${id}/password`, { new_password: newPassword.trim() });
-        alert('密码修改成功，请通知超管使用新密码登录后修改密码');
+        alert('密码修改成功，请通知超管使用新密码登录');
     } catch {}
 }
 
@@ -692,20 +627,7 @@ async function monitorDelete(id, name) {
     try {
         await api('DELETE', `/monitor/super-admins/${id}`);
         alert('删除成功！');
-        loadMonitorSuperAdmins();
-    } catch {}
-}
-
-async function monitorChangeOwnPwd() {
-    const oldP = document.getElementById('monitor-old-pwd-input').value;
-    const newP = document.getElementById('monitor-new-pwd-input').value;
-    if (!oldP || !newP) { alert('请填写完整'); return; }
-    if (newP.trim().length < 6) { alert('新密码至少需要6位'); return; }
-    try {
-        await api('POST', '/monitor/change-password', { old_password: oldP, new_password: newP });
-        alert('密码修改成功');
-        document.getElementById('monitor-old-pwd-input').value = '';
-        document.getElementById('monitor-new-pwd-input').value = '';
+        loadMonitorDashboard();
     } catch {}
 }
 

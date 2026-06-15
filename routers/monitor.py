@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from database import get_db
 from auth import (
-    verify_password,
     require_monitor, hash_password
 )
 
@@ -108,9 +107,6 @@ def update_super_admin_status(user_id: int, status: str, monitor=Depends(require
             target = cursor.fetchone()
             if not target:
                 raise HTTPException(status_code=404, detail="用户不存在")
-            if target["role"] != "admin" or not target.get("is_super_admin", 0):
-                # 监察员只能操作超管
-                pass
             if not (target["role"] == "admin" and target.get("is_super_admin", 0)):
                 raise HTTPException(status_code=403, detail="只能操作超管账号")
 
@@ -183,28 +179,3 @@ def delete_super_admin(user_id: int, monitor=Depends(require_monitor)):
                 detail=f"监察员删除超管账号 {target['username']}"
             )
     return {"message": "超管账号已删除"}
-
-
-# ========== 监察员：修改自己的密码 ==========
-
-class ChangePasswordRequest(BaseModel):
-    old_password: str
-    new_password: str
-
-
-@router.post("/change-password")
-def monitor_change_password(req: ChangePasswordRequest, monitor=Depends(require_monitor)):
-    """监察员修改自己的密码"""
-    if not verify_password(req.old_password, monitor["password_hash"]):
-        raise HTTPException(status_code=400, detail="原密码错误")
-
-    new_hash = hash_password(req.new_password)
-    with get_db() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                "UPDATE users SET password_hash = %s, plain_password = %s, must_change_pwd = 0 WHERE id = %s",
-                (new_hash, req.new_password, monitor["id"])
-            )
-            log_operation(conn, monitor["id"], "monitor_change_own_password",
-                           detail="监察员修改自身密码")
-    return {"message": "密码修改成功"}
