@@ -348,6 +348,46 @@ th { color: var(--text-muted); font-weight: 600; font-size: 0.78rem; text-transf
 .match-result.win { background: rgba(16,185,129,0.1); color: var(--success); }
 .match-result.lose { background: rgba(239,68,68,0.1); color: var(--danger); }
 
+/* 本轮对战结果大横幅 */
+.match-result-banner {
+    border-radius: 12px;
+    padding: 24px 16px;
+    text-align: center;
+    margin: 0 0 12px 0;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+}
+.match-result-banner .banner-big-text {
+    font-size: 3.5rem;
+    font-weight: 800;
+    letter-spacing: 4px;
+    line-height: 1.2;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.match-result-banner .banner-detail {
+    font-size: 1.1rem;
+    line-height: 1.6;
+    font-weight: 600;
+}
+.match-result-banner.win {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #fff;
+}
+.match-result-banner.win .banner-big-text { color: #fff; }
+.match-result-banner.lose {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: #fff;
+}
+.match-result-banner.lose .banner-big-text { color: #fff; }
+
+@media (max-width: 600px) {
+    .match-result-banner .banner-big-text {
+        font-size: 2.6rem;
+        letter-spacing: 2px;
+    }
+    .match-result-banner .banner-detail { font-size: 1rem; }
+}
+
 /* Monitor Tabs */
 .monitor-tabs {
     display: flex;

@@ -122,7 +122,8 @@ def get_me(user=Depends(get_current_user)):
                 if clan_ids:
                     in_placeholder = ",".join(["%s"] * len(clan_ids))
                     cursor.execute(f"""
-                        SELECT m.clan_a_id, m.clan_b_id, ca.name as clan_a_name, cb.name as clan_b_name
+                        SELECT m.clan_a_id, m.clan_b_id, ca.name as clan_a_name, cb.name as clan_b_name,
+                               m.winner_id, m.loser_id
                         FROM matches m
                         JOIN clans ca ON m.clan_a_id = ca.id
                         JOIN clans cb ON m.clan_b_id = cb.id
@@ -130,16 +131,25 @@ def get_me(user=Depends(get_current_user)):
                           AND m.matched_at >= %s
                           AND (m.clan_a_id IN ({in_placeholder}) OR m.clan_b_id IN ({in_placeholder}))
                         ORDER BY m.matched_at DESC LIMIT 1
-                    """, [current_round["opened_at"]] + clan_ids + clan_ids)
+                    """, (current_round["start_time"], *clan_ids, *clan_ids))
                     active_match = cursor.fetchone()
                     if active_match:
                         has_active_match = True
                         my_clan_id_set = set(clan_ids)
-                        if active_match["clan_a_id"] in my_clan_id_set:
-                            opponent_name = active_match["clan_b_name"]
-                        else:
-                            opponent_name = active_match["clan_a_name"]
-                        active_match_info = {"opponent_name": opponent_name}
+                        my_clan_id = active_match["clan_a_id"] if active_match["clan_a_id"] in my_clan_id_set else active_match["clan_b_id"]
+                        opponent_name = active_match["clan_b_name"] if my_clan_id == active_match["clan_a_id"] else active_match["clan_a_name"]
+                        my_clan_name = active_match["clan_a_name"] if my_clan_id == active_match["clan_a_id"] else active_match["clan_b_name"]
+                        is_win = active_match["winner_id"] == my_clan_id
+                        active_match_info = {
+                            "opponent_name": opponent_name,
+                            "my_clan_name": my_clan_name,
+                            "my_clan_id": my_clan_id,
+                            "result": "win" if is_win else "lose",
+                            "winner_id": active_match["winner_id"],
+                            "loser_id": active_match["loser_id"],
+                            "winner_name": my_clan_name if is_win else opponent_name,
+                            "loser_name": opponent_name if is_win else my_clan_name,
+                        }
 
             # 积分操作指南
             cursor.execute("SELECT content FROM score_guide ORDER BY id DESC LIMIT 1")

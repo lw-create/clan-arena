@@ -120,17 +120,29 @@ async function loadPlayerData() {
     renderRoundTime(data.current_round);
     updateConfigHint(data.current_round);
 
-    // 匹配成功提示：隐藏或显示登记区域
+    // 匹配成功提示：隐藏或显示登记区域，并展示胜负大横幅
     const matchCard = document.getElementById('match-card');
     const matchDone = document.getElementById('match-done');
+    const resultBanner = document.getElementById('match-result-banner');
     if (data.has_active_match && data.active_match_info) {
-        // 本轮已匹配，显示对手信息
         matchCard.style.display = 'none';
         matchDone.style.display = '';
-        matchDone.innerHTML = `<div class="match-done-info">✅ 本轮部落战匹配成功！<br>您的对手：<strong>${escapeHTML(data.active_match_info.opponent_name)}</strong><br><span style="font-size:0.82rem;color:var(--text-muted)">如需撤销，请在下方对战记录中操作（每轮仅限一次）</span></div>`;
+        matchDone.innerHTML = `<div class="match-done-info">✅ 本轮部落战已完成登记！<br>对手：<strong>${escapeHTML(data.active_match_info.opponent_name)}</strong><br><span style="font-size:0.82rem;color:var(--text-muted)">如需撤销，请在下方对战记录中操作（每轮仅限一次）</span></div>`;
+        // 显示胜负大横幅
+        if (data.active_match_info.result === 'win') {
+            resultBanner.className = 'match-result-banner win';
+            resultBanner.innerHTML = `<div class="banner-big-text">✌ 胜利！</div><div class="banner-detail">${escapeHTML(data.active_match_info.my_clan_name)} vs ${escapeHTML(data.active_match_info.opponent_name)}<br>恭喜，积分 +1</div>`;
+            resultBanner.style.display = '';
+        } else {
+            resultBanner.className = 'match-result-banner lose';
+            resultBanner.innerHTML = `<div class="banner-big-text">✗ 失败</div><div class="banner-detail">${escapeHTML(data.active_match_info.my_clan_name)} vs ${escapeHTML(data.active_match_info.opponent_name)}<br>积分 -1，再接再厉！</div>`;
+            resultBanner.style.display = '';
+        }
     } else {
         matchCard.style.display = '';
         matchDone.style.display = 'none';
+        resultBanner.style.display = 'none';
+        resultBanner.innerHTML = '';
     }
 
     // 积分操作指南
@@ -439,27 +451,40 @@ async function matchUnregistered() {
 }
 
 function showMatchResult(data) {
-    const el = document.getElementById('match-result');
     const myClanName = document.getElementById('my-clan-select').selectedOptions[0].text.split(' (')[0];
-    let html = '';
+    const banner = document.getElementById('match-result-banner');
+    const matchDone = document.getElementById('match-done');
+    const matchCard = document.getElementById('match-card');
     if (data.is_registered) {
         const opponentName = data.winner.name === myClanName ? data.loser.name : data.winner.name;
-        html = `<div class="match-result win">
-            ✅ 对战登记成功！<br>
-            对手：${escapeHTML(opponentName)}<br>
-            🎉 ${escapeHTML(data.winner.name)} 胜利！积分: ${data.winner.score}<br>
-            💔 ${escapeHTML(data.loser.name)} 失败！积分: ${data.loser.score}
-        </div>`;
+        const iWin = data.winner.name === myClanName;
+        if (iWin) {
+            banner.className = 'match-result-banner win';
+            banner.innerHTML = `<div class="banner-big-text">✌ 胜利！</div><div class="banner-detail">${escapeHTML(myClanName)} vs ${escapeHTML(opponentName)}<br>恭喜，积分 +1（当前：${data.winner.score}）</div>`;
+        } else {
+            banner.className = 'match-result-banner lose';
+            banner.innerHTML = `<div class="banner-big-text">✗ 失败</div><div class="banner-detail">${escapeHTML(myClanName)} vs ${escapeHTML(opponentName)}<br>积分 -1，再接再厉（当前：${data.loser.score}）</div>`;
+        }
+        banner.style.display = '';
+        matchCard.style.display = 'none';
+        matchDone.style.display = '';
+        matchDone.innerHTML = `<div class="match-done-info">✅ 对战已登记完成！<br>对手：<strong>${escapeHTML(opponentName)}</strong></div>`;
     } else {
-        html = `<div class="match-result lose">⚠️ 对战登记成功（对方未登记）<br>对方部落未登记，默认判输<br>积分 -1，当前: ${data.loser.score}</div>`;
+        const opponentName = data.loser.name || '对方部落';
+        banner.className = 'match-result-banner lose';
+        banner.innerHTML = `<div class="banner-big-text">✗ 失败</div><div class="banner-detail">${escapeHTML(myClanName)} vs ${escapeHTML(opponentName)}<br>对方未登记，默认判输，积分 -1（当前：${data.loser.score}）</div>`;
+        banner.style.display = '';
+        matchCard.style.display = 'none';
+        matchDone.style.display = '';
+        matchDone.innerHTML = `<div class="match-done-info">⚠️ 对战已提交（对方未登记）<br>对手：<strong>${escapeHTML(opponentName)}</strong></div>`;
     }
-    el.innerHTML = html;
     document.getElementById('search-keyword').value = '';
     document.getElementById('search-results').innerHTML = '';
     document.getElementById('unreg-clan-name').value = '';
     document.getElementById('unreg-clan-code').value = '';
     document.getElementById('unreg-category').selectedIndex = 0;
     document.getElementById('config-remark').value = '';
+    banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
     loadPlayerDataLight();
 }
 
@@ -478,13 +503,25 @@ async function loadPlayerDataLight() {
         // 更新匹配状态
         const matchDone = document.getElementById('match-done');
         const matchCard = document.getElementById('match-card');
+        const resultBanner = document.getElementById('match-result-banner');
         if (data.has_active_match && data.active_match_info) {
             matchCard.style.display = 'none';
             matchDone.style.display = '';
-            matchDone.innerHTML = `<div class="match-done-info">✅ 本轮部落战匹配成功！<br>您的对手：<strong>${escapeHTML(data.active_match_info.opponent_name)}</strong></div>`;
+            matchDone.innerHTML = `<div class="match-done-info">✅ 本轮部落战已完成登记！<br>对手：<strong>${escapeHTML(data.active_match_info.opponent_name)}</strong></div>`;
+            if (data.active_match_info.result === 'win') {
+                resultBanner.className = 'match-result-banner win';
+                resultBanner.innerHTML = `<div class="banner-big-text">✌ 胜利！</div><div class="banner-detail">${escapeHTML(data.active_match_info.my_clan_name)} vs ${escapeHTML(data.active_match_info.opponent_name)}<br>恭喜，积分 +1</div>`;
+                resultBanner.style.display = '';
+            } else {
+                resultBanner.className = 'match-result-banner lose';
+                resultBanner.innerHTML = `<div class="banner-big-text">✗ 失败</div><div class="banner-detail">${escapeHTML(data.active_match_info.my_clan_name)} vs ${escapeHTML(data.active_match_info.opponent_name)}<br>积分 -1，再接再厉！</div>`;
+                resultBanner.style.display = '';
+            }
         } else {
             matchCard.style.display = '';
             matchDone.style.display = 'none';
+            resultBanner.style.display = 'none';
+            resultBanner.innerHTML = '';
         }
 
         await loadLeaderboard();
