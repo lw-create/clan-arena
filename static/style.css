@@ -348,6 +348,121 @@ th { color: var(--text-muted); font-weight: 600; font-size: 0.78rem; text-transf
 .match-result.win { background: rgba(16,185,129,0.1); color: var(--success); }
 .match-result.lose { background: rgba(239,68,68,0.1); color: var(--danger); }
 
+/* Monitor Tabs */
+.monitor-tabs {
+    display: flex;
+    gap: 6px;
+    background: var(--card-bg);
+    padding: 6px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    border: 1px solid var(--border);
+}
+.monitor-tab {
+    flex: 1;
+    min-width: 80px;
+    padding: 8px 10px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+.monitor-tab.active {
+    background: var(--primary);
+    color: white;
+}
+.monitor-tab-content {
+    display: none;
+}
+.monitor-tab-content.active {
+    display: block;
+}
+
+/* Admin Card Layout */
+.admin-card {
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+}
+.admin-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.admin-card-title {
+    font-weight: 700;
+    font-size: 1.05rem;
+}
+.admin-card-info {
+    background: rgba(79, 70, 229, 0.06);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    font-size: 0.85rem;
+    color: var(--text);
+    line-height: 1.8;
+}
+.info-label {
+    color: var(--text-muted);
+    display: inline-block;
+    min-width: 60px;
+}
+.card-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+/* Admin Log List */
+.admin-log-list {
+    margin-top: 8px;
+}
+.admin-log-item {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+}
+.admin-log-item:last-child {
+    border-bottom: none;
+}
+.admin-log-header {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+.admin-log-user {
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+.admin-log-time {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    margin-left: auto;
+}
+.admin-log-detail {
+    color: var(--text);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    padding: 4px 0;
+}
+
+/* Monitor content extra spacing */
+#monitor-content {
+    max-width: 720px;
+    margin: 16px auto;
+    padding: 0 16px;
+}
+
 @media (max-width: 600px) {
     .search-box { flex-direction: column; }
+    .card-actions { gap: 4px; }
+    .card-actions .btn { flex: 1; min-width: 60px; font-size: 0.78rem; padding: 6px 8px; }
 }

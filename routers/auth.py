@@ -49,9 +49,11 @@ def log_operation(db, admin_id: int, action: str, target_type: str = None,
 
 @router.post("/login")
 def login(req: LoginRequest):
+    username = req.username.strip()
+    password = req.password.strip()
     with get_db() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM users WHERE username = %s", (req.username,))
+            cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
             user = cursor.fetchone()
 
             # 维护模式检查：非管理员在维护期间无法登录
@@ -61,7 +63,7 @@ def login(req: LoginRequest):
                 if current_round and current_round.get("maintenance"):
                     raise HTTPException(status_code=503, detail="系统维护中，请稍后登录")
 
-    if not user or not verify_password(req.password, user["password_hash"]):
+    if not user or not verify_password(password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
 
     if user["role"] == "monitor":
