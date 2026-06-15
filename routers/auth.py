@@ -66,9 +66,6 @@ def login(req: LoginRequest):
     if not user or not verify_password(password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
 
-    if user["role"] == "monitor":
-        raise HTTPException(status_code=403, detail="监察员账号请使用监察员登录入口")
-
     if user["status"] == "frozen":
         raise HTTPException(status_code=403, detail="账号已被冻结，请联系管理员解冻")
     if user["status"] == "disabled":
@@ -402,6 +399,15 @@ def send_notification(req: SendNotificationRequest, admin=Depends(require_admin)
             cursor.execute("INSERT INTO notifications (content) VALUES (%s)", (req.content,))
             log_operation(conn, admin["id"], "send_notification", detail=req.content[:50])
     return {"message": "通知已发送"}
+
+
+@router.get("/admin/notifications")
+def list_notifications(admin=Depends(require_admin)):
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50")
+            notifications = cursor.fetchall()
+    return {"notifications": notifications}
 
 
 # ========== 超管权限管理 ==========

@@ -1,13 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from database import get_db
 from auth import (
-    verify_password, create_access_token,
+    verify_password,
     require_monitor, hash_password
 )
-from datetime import datetime
-import json
-from fastapi.responses import JSONResponse
 
 
 def log_operation(db, admin_id: int, action: str, target_type: str = None,
@@ -24,13 +21,6 @@ def log_operation(db, admin_id: int, action: str, target_type: str = None,
 router = APIRouter(prefix="/api/monitor", tags=["监察员"])
 
 
-# ========== 监察员登录 ==========
-
-class MonitorLoginRequest(BaseModel):
-    username: str
-    password: str
-
-
 class SuperAdminPasswordRequest(BaseModel):
     new_password: str
 
@@ -38,43 +28,6 @@ class SuperAdminPasswordRequest(BaseModel):
 class CreateSuperAdminRequest(BaseModel):
     username: str
     password: str
-
-
-@router.post("/login")
-def monitor_login(req: MonitorLoginRequest):
-    """监察员专用登录入口（仅允许 monitor 账号可登录）"""
-    username = req.username.strip()
-    password = req.password.strip()
-    with get_db() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                "SELECT * FROM users WHERE username = %s",
-                (username,)
-            )
-            user = cursor.fetchone()
-
-    if not user or not verify_password(password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
-
-    # 关键：只允许 role == monitor 登录
-    if user["role"] != "monitor":
-        raise HTTPException(status_code=403, detail="仅允许 monitor 账号使用监察员登录入口")
-
-    if user["status"] == "frozen":
-        raise HTTPException(status_code=403, detail="账号已被冻结")
-    if user["status"] == "disabled":
-        raise HTTPException(status_code=403, detail="账号已被禁用")
-
-    token = create_access_token({"sub": str(user["id"]), "role": user["role"]})
-    return {
-        "token": token,
-        "user": {
-            "id": user["id"],
-            "username": user["username"],
-            "role": user["role"],
-            "must_change_pwd": bool(user.get("must_change_pwd", 0)),
-        }
-    }
 
 
 # ========== 监察员：查看超管列表 ==========
@@ -255,138 +208,3 @@ def monitor_change_password(req: ChangePasswordRequest, monitor=Depends(require_
             log_operation(conn, monitor["id"], "monitor_change_own_password",
                            detail="监察员修改自身密码")
     return {"message": "密码修改成功"}
-
-
-# ========== 监察员：数据导出 ==========
-
-BACKUP_TABLES = [
-    "users", "clans", "user_clan", "matches",
-    "notifications", "operation_logs", "unknown_clans",
-    "rounds", "round_registrations"
-]
-
-IMPORT_ORDER = [
-    "users", "clans", "rounds", "notifications",
-    "user_clan", "matches", "round_registrations",
-    "operation_logs", "unknown_clans"
-]
-
-
-def _serialize_row(row):
-    """将数据库行转为 JSON 可序列化格式"""
-    result = {}
-    for k, v in row.items():
-        if isinstance(v, datetime):
-            result[k] = v.isoformat()
-        elif isinstance(v, bytes):
-            result[k] = v.decode('utf-8', errors='replace')
-        else:
-            result[k] = v
-    return result
-
-
-@router.get("/backup/export")
-def export_data(monitor=Depends(require_monitor)):
-    """监察员导出所有数据为 JSON"""
-    data = {}
-    with get_db() as conn:
-        with conn.cursor() as cursor:
-            for table in BACKUP_TABLES:
-                cursor.execute(f"SELECT * FROM {table}")
-                rows = cursor.fetchall()
-                data[table] = [_serialize_row(r) for r in rows]
-
-    export_info = {
-        "version": "1.0",
-        "exported_at": datetime.now().isoformat(),
-        "tables": list(data.keys()),
-        "row_counts": {t: len(data[t]) for t in data},
-        "data": data
-    }
-
-    filename = f"clan_arena_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    log_operation(conn, monitor["id"], "monitor_export_data", detail="监察员导出所有数据")
-    return JSONResponse(
-        content=export_info,
-        media_type="application/json",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-    )
-
-
-# ========== 监察员：数据导入 ==========
-
-@router.post("/backup/import")
-async def import_data(file: UploadFile = File(...), monitor=Depends(require_monitor)):
-    """监察员从 JSON 文件导入数据（覆盖现有数据）"""
-    if not file.filename.endswith('.json'):
-        raise HTTPException(status_code=400, detail="仅支持 .json 文件")
-
-    try:
-        content = await file.read()
-        backup = json.loads(content)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="文件格式错误，无法解析JSON")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"文件读取失败: {str(e)}")
-
-    if "data" not in backup or not isinstance(backup["data"], dict):
-        raise HTTPException(status_code=400, detail="无效的备份文件格式，缺少 data 字段")
-
-    import_data_dict = backup["data"]
-
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
-
-        try:
-            for table in IMPORT_ORDER:
-                if table not in import_data_dict:
-                    continue
-
-                rows = import_data_dict[table]
-                if not rows:
-                    cursor.execute(f"DELETE FROM {table}")
-                    continue
-
-                columns = list(rows[0].keys())
-                col_str = ", ".join(f'`{c}`' for c in columns)
-                placeholders = ", ".join(["%s"] * len(columns))
-
-                cursor.execute(f"DELETE FROM {table}")
-
-                for row in rows:
-                    values = [row.get(c) for c in columns]
-                    cursor.execute(
-                        f"INSERT INTO {table} ({col_str}) VALUES ({placeholders})",
-                        values
-                    )
-
-            cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
-            log_operation(conn, monitor["id"], "monitor_import_data",
-                           detail="监察员导入全部数据，覆盖现有数据")
-
-        except Exception as e:
-            cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
-            raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
-
-    imported_counts = {t: len(import_data_dict.get(t, [])) for t in IMPORT_ORDER if t in import_data_dict}
-    return {"message": "数据导入成功", "imported": imported_counts}
-
-
-# ========== 监察员：操作日志 ==========
-
-@router.get("/operation-logs")
-def monitor_operation_logs(monitor=Depends(require_monitor)):
-    """监察员查看所有操作日志"""
-    with get_db() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT ol.id, ol.admin_id, ol.action, ol.target_type, ol.target_id,
-                       ol.detail, ol.reason, ol.created_at, u.username
-                FROM operation_logs ol
-                LEFT JOIN users u ON ol.admin_id = u.id
-                ORDER BY ol.created_at DESC
-                LIMIT 200
-            """)
-            logs = cursor.fetchall()
-    return {"logs": logs}

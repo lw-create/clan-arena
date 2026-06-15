@@ -38,7 +38,6 @@ function formatDate(d) {
 }
 
 // ========== 登录 ==========
-let loginMode = 'normal';  // 'normal' | 'monitor'
 
 // 所有DOM操作必须在DOMContentLoaded后执行
 document.addEventListener('DOMContentLoaded', () => {
@@ -58,8 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const password = document.getElementById('login-password').value.trim();
             const remember = document.getElementById('remember-me').checked;
 
-            const url = loginMode === 'monitor' ? '/monitor/login' : '/login';
-            const data = await api('POST', url, { username, password });
+            const data = await api('POST', '/login', { username, password });
             token = data.token;
             localStorage.setItem('token', token);
             currentUser = data.user;
@@ -99,16 +97,7 @@ async function loadDashboard(user) {
     }
 }
 
-function logout() { token = ''; currentUser = null; myClans = []; activeClanId = null; loginMode = 'normal'; localStorage.removeItem('token'); showPage('login-page'); }
-
-function toggleLoginMode() {
-    loginMode = loginMode === 'normal' ? 'monitor' : 'normal';
-    document.getElementById('login-subtitle').textContent = loginMode === 'monitor' ? '监察员登录' : 'Clan Arena';
-    document.getElementById('login-btn').textContent = loginMode === 'monitor' ? '监察员登录' : '登 录';
-    document.querySelector('#login-page a').textContent = loginMode === 'monitor' ? '切换为普通登录' : '切换为监察员登录';
-    document.getElementById('login-username').value = '';
-    document.getElementById('login-password').value = '';
-}
+function logout() { token = ''; currentUser = null; myClans = []; activeClanId = null; localStorage.removeItem('token'); showPage('login-page'); }
 
 // ========== 玩家面板 ==========
 async function loadPlayerData() {
@@ -546,23 +535,41 @@ async function safeLoadAdminOptional(fn, label) {
 }
 
 async function loadMonitorDashboard() {
+    // 监察员界面：隐藏普通管理员后台，只显示超管管理
     const adminContent = document.getElementById('admin-content');
     if (adminContent) adminContent.style.display = 'none';
 
     document.getElementById('admin-username').textContent = currentUser.username + '（监察员）';
 
+    // 创建独立的 monitor 内容区
     let content = `
-        <div class="monitor-tabs">
-            <button class="monitor-tab active" onclick="switchMonitorTab(event,'super')">🔐 超管管理</button>
-            <button class="monitor-tab" onclick="switchMonitorTab(event,'backup')">💾 数据管理</button>
-            <button class="monitor-tab" onclick="switchMonitorTab(event,'logs')">📝 操作日志</button>
-            <button class="monitor-tab" onclick="switchMonitorTab(event,'pwd')">🔑 我的密码</button>
+        <div id="monitor-super">
+            <div class="card">
+                <h2>🔐 超管账号管理</h2>
+                <p class="hint-text" id="monitor-super-count"></p>
+                <div class="card-actions">
+                    <button class="btn btn-primary btn-sm" onclick="showCreateSuperAdmin()">➕ 新增超管</button>
+                    <button class="btn btn-sm" onclick="loadMonitorSuperAdmins()">🔄 刷新</button>
+                </div>
+            </div>
+            <div id="monitor-super-list"></div>
         </div>
 
-        <div id="monitor-tab-super" class="monitor-tab-content active"></div>
-        <div id="monitor-tab-backup" class="monitor-tab-content"></div>
-        <div id="monitor-tab-logs" class="monitor-tab-content"></div>
-        <div id="monitor-tab-pwd" class="monitor-tab-content"></div>
+        <div id="monitor-pwd">
+            <div class="card">
+                <h2>🔑 修改我的密码</h2>
+                <p class="hint-text">修改监察员账号登录密码</p>
+                <div class="form-group">
+                    <label>原密码</label>
+                    <input type="password" id="monitor-old-pwd-input" placeholder="请输入原密码">
+                </div>
+                <div class="form-group">
+                    <label>新密码</label>
+                    <input type="password" id="monitor-new-pwd-input" placeholder="请输入新密码（至少6位）">
+                </div>
+                <button class="btn btn-primary" onclick="monitorChangeOwnPwd()">修改密码</button>
+            </div>
+        </div>
     `;
 
     let monitorContent = document.getElementById('monitor-content');
@@ -580,39 +587,21 @@ async function loadMonitorDashboard() {
     monitorContent.style.display = 'block';
 
     loadMonitorSuperAdmins();
-    renderMonitorBackup();
-    renderMonitorLogs();
-    renderMonitorPwd();
-}
-
-function switchMonitorTab(e, name) {
-    document.querySelectorAll('.monitor-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.monitor-tab-content').forEach(t => t.classList.remove('active'));
-    e.target.classList.add('active');
-    document.getElementById(`monitor-tab-${name}`).classList.add('active');
 }
 
 async function loadMonitorSuperAdmins() {
     try {
         const data = await api('GET', '/monitor/super-admins', null, { silent: true });
-        const el = document.getElementById('monitor-tab-super');
-        let html = `
-            <div class="card">
-                <h2>🔐 超管账号管理</h2>
-                <p class="hint-text">当前超管数量：<strong>${data.total || 0} / 2</strong>（最多 2 个）</p>
-                <div class="card-actions">
-                    <button class="btn btn-primary btn-sm" onclick="showCreateSuperAdmin()">➕ 新增超管</button>
-                    <button class="btn btn-sm" onclick="loadMonitorSuperAdmins()">🔄 刷新</button>
-                </div>
-            </div>
-        `;
+        const countEl = document.getElementById('monitor-super-count');
+        if (countEl) countEl.innerHTML = `当前超管数量：<strong>${data.total || 0} / 2</strong>（最多 2 个）`;
 
+        const el = document.getElementById('monitor-super-list');
         if (!data.super_admins || data.super_admins.length === 0) {
-            html += '<div class="card"><p class="empty-text">暂无超管账号</p></div>';
-            el.innerHTML = html;
+            el.innerHTML = '<div class="card"><p class="empty-text">暂无超管账号</p></div>';
             return;
         }
 
+        let html = '';
         for (const u of data.super_admins) {
             let statusBadge = '';
             let actions = '';
@@ -634,7 +623,6 @@ async function loadMonitorSuperAdmins() {
                     <button class="btn btn-sm btn-success" onclick="monitorSetStatus(${u.id},'${escapeAttr(u.username)}','active')">恢复</button>
                 `;
             }
-
             const pwdFlag = u.must_change_pwd ? ' <span class="badge" style="background:rgba(245,158,11,0.2);color:#f59e0b">需改密码</span>' : '';
 
             html += `
@@ -658,8 +646,8 @@ async function loadMonitorSuperAdmins() {
         }
         el.innerHTML = html;
     } catch (e) {
-        const el = document.getElementById('monitor-tab-super');
-        el.innerHTML = `<div class="card"><p class="empty-text">加载失败：${escapeHTML(e.message)}</p></div>`;
+        const el = document.getElementById('monitor-super-list');
+        if (el) el.innerHTML = `<div class="card"><p class="empty-text">加载失败：${escapeHTML(e.message)}</p></div>`;
     }
 }
 
@@ -671,8 +659,7 @@ async function showCreateSuperAdmin() {
     if (password.trim().length < 6) { alert('密码至少需要6位'); return; }
     try {
         await api('POST', '/monitor/super-admins', {
-            username: username.trim(),
-            password: password.trim()
+            username: username.trim(), password: password.trim()
         });
         alert('超管账号创建成功！');
         loadMonitorSuperAdmins();
@@ -707,121 +694,6 @@ async function monitorDelete(id, name) {
         alert('删除成功！');
         loadMonitorSuperAdmins();
     } catch {}
-}
-
-function renderMonitorBackup() {
-    const el = document.getElementById('monitor-tab-backup');
-    el.innerHTML = `
-        <div class="card">
-            <h2>💾 数据导出</h2>
-            <p class="hint-text">将所有数据导出为 JSON 文件，可用于备份或迁移。</p>
-            <button class="btn btn-primary" onclick="monitorExportData()">📦 导出全部数据</button>
-        </div>
-        <div class="card">
-            <h2>📂 数据导入</h2>
-            <p class="hint-text warning-text">⚠️ 导入将<strong>覆盖现有全部数据</strong>，请谨慎操作！</p>
-            <input type="file" id="monitor-import-file" accept=".json" style="margin-bottom:10px;padding:8px;width:100%">
-            <button class="btn btn-danger" onclick="monitorImportData()">📥 导入数据（覆盖）</button>
-        </div>
-    `;
-}
-
-async function monitorExportData() {
-    try {
-        const tk = localStorage.getItem('token');
-        const res = await fetch(`${API}/monitor/backup/export`, {
-            headers: { 'Authorization': `Bearer ${tk}` }
-        });
-        if (!res.ok) throw new Error('导出失败');
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const disposition = res.headers.get('content-disposition');
-        let filename = 'clan_arena_backup.json';
-        if (disposition) {
-            const match = disposition.match(/filename="?([^"]+)"?/);
-            if (match) filename = match[1];
-        }
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-        alert('数据导出成功！');
-    } catch (e) {
-        alert('导出失败：' + e.message);
-    }
-}
-
-async function monitorImportData() {
-    const fileInput = document.getElementById('monitor-import-file');
-    if (!fileInput.files || !fileInput.files.length) { alert('请先选择文件'); return; }
-    if (!await customConfirm('⚠️ 导入将覆盖现有全部数据，此操作不可撤销！\n\n建议先导出备份后再导入。\n\n确认继续？', '继续导入')) return;
-    if (!await customConfirm('再次确认：真的要覆盖所有数据吗？', '确认覆盖')) return;
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-    try {
-        const tk = localStorage.getItem('token');
-        const res = await fetch(`${API}/monitor/backup/import`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${tk}` },
-            body: formData
-        });
-        const data = await res.json();
-        if (!res.ok) { alert('导入失败：' + (data.detail || '未知错误')); return; }
-        alert('数据导入成功！\n' + JSON.stringify(data.imported, null, 2));
-    } catch (e) {
-        alert('导入失败：' + e.message);
-    }
-}
-
-async function renderMonitorLogs() {
-    const el = document.getElementById('monitor-tab-logs');
-    el.innerHTML = `<div class="card"><p class="empty-text">加载中...</p></div>`;
-    try {
-        const data = await api('GET', '/monitor/operation-logs', null, { silent: true });
-        if (!data.logs || data.logs.length === 0) {
-            el.innerHTML = `<div class="card"><p class="empty-text">暂无操作日志</p></div>`;
-            return;
-        }
-        let html = '<div class="card"><h2>📝 操作日志</h2>';
-        html += '<div class="admin-log-list">';
-        data.logs.forEach(l => {
-            html += `
-                <div class="admin-log-item">
-                    <div class="admin-log-header">
-                        <span class="badge badge-admin">${escapeHTML(l.action)}</span>
-                        <span class="admin-log-user">👤 ${escapeHTML(l.username || '-')}</span>
-                        <span class="admin-log-time">${formatDate(l.created_at)}</span>
-                    </div>
-                    ${l.detail ? `<div class="admin-log-detail">📄 ${escapeHTML(l.detail)}</div>` : ''}
-                    ${l.reason ? `<div class="admin-log-detail">💭 ${escapeHTML(l.reason)}</div>` : ''}
-                </div>
-            `;
-        });
-        html += '</div></div>';
-        el.innerHTML = html;
-    } catch (e) {
-        el.innerHTML = `<div class="card"><p class="empty-text">加载失败：${escapeHTML(e.message)}</p></div>`;
-    }
-}
-
-function renderMonitorPwd() {
-    const el = document.getElementById('monitor-tab-pwd');
-    el.innerHTML = `
-        <div class="card">
-            <h2>🔑 修改我的密码</h2>
-            <p class="hint-text">修改监察员账号登录密码</p>
-            <div class="form-group">
-                <label>原密码</label>
-                <input type="password" id="monitor-old-pwd-input" placeholder="请输入原密码">
-            </div>
-            <div class="form-group">
-                <label>新密码</label>
-                <input type="password" id="monitor-new-pwd-input" placeholder="请输入新密码">
-            </div>
-            <button class="btn btn-primary" onclick="monitorChangeOwnPwd()">修改密码</button>
-        </div>
-    `;
 }
 
 async function monitorChangeOwnPwd() {
@@ -925,7 +797,7 @@ async function loadAllMatches() {
 
 async function loadMatchStats() {
     try {
-        const data = await api('GET', '/admin/match-stats');
+        const data = await api('GET', '/admin/match-stats', null, { silent: true });
         const el = document.getElementById('match-stats-content');
         let html = '';
         if (data.stats && data.stats.unknown_clan_matches && data.stats.unknown_clan_matches.length > 0) {
@@ -941,7 +813,7 @@ async function loadMatchStats() {
 
 async function loadOperationLogs() {
     try {
-        const data = await api('GET', '/admin/operation-logs');
+        const data = await api('GET', '/admin/operation-logs', null, { silent: true });
         const el = document.getElementById('operation-logs');
         if (!data.logs || data.logs.length === 0) { el.innerHTML = '<p class="empty-text">暂无操作日志</p>'; return; }
         let html = '<div class="table-wrapper"><table><tr><th>时间</th><th>操作者</th><th>部落</th><th>操作</th><th>对象</th><th>详情</th><th>理由</th></tr>';
@@ -955,7 +827,7 @@ async function loadOperationLogs() {
 
 async function loadNotificationHistory() {
     try {
-        const data = await api('GET', '/notifications');
+        const data = await api('GET', '/admin/notifications', null, { silent: true });
         const el = document.getElementById('notification-history');
         if (!data.notifications || data.notifications.length === 0) { el.innerHTML = '<p class="empty-text">暂无通知</p>'; return; }
         let html = '';
@@ -1149,7 +1021,7 @@ async function closeRound() {
 
 async function loadUnknownClans() {
     try {
-        const data = await api('GET', '/admin/unknown-clans');
+        const data = await api('GET', '/admin/unknown-clans', null, { silent: true });
         const el = document.getElementById('unknown-clans-list');
         if (!data.unknown_clans || data.unknown_clans.length === 0) {
             el.innerHTML = '<p class="empty-text">暂无陌生部落记录</p>';
@@ -1173,7 +1045,7 @@ async function loadUnknownClans() {
 // ========== 本轮部落统计 ==========
 async function loadRoundClanStatus() {
     try {
-        const data = await api('GET', '/admin/round/clan-status');
+        const data = await api('GET', '/admin/round/clan-status', null, { silent: true });
         const el = document.getElementById('round-clan-status');
         if (!data.current_round) {
             el.innerHTML = '<p class="empty-text">当前无进行中的轮次</p>';
@@ -1312,7 +1184,7 @@ function selectClanForAdjust(clanId, clanName, score) {
 // ========== 管理员积分指南 ==========
 async function loadScoreGuide() {
     try {
-        const data = await api('GET', '/admin/score-guide');
+        const data = await api('GET', '/admin/score-guide', null, { silent: true });
         document.getElementById('score-guide-content').value = data.content || '';
     } catch {}
 }
