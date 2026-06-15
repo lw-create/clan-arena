@@ -128,14 +128,25 @@ async function loadPlayerData() {
         matchCard.style.display = 'none';
         matchDone.style.display = '';
         matchDone.innerHTML = `<div class="match-done-info">✅ 本轮部落战已完成登记！<br>对手：<strong>${escapeHTML(data.active_match_info.opponent_name)}</strong><br><span style="font-size:0.82rem;color:var(--text-muted)">如需撤销，请在下方对战记录中操作（每轮仅限一次）</span></div>`;
-        // 显示胜负大横幅
-        if (data.active_match_info.result === 'win') {
+        // 根据 result 显示大横幅
+        const result = data.active_match_info.result;
+        if (result === 'win') {
             resultBanner.className = 'match-result-banner win';
             resultBanner.innerHTML = `<div class="banner-big-text">✌ 胜利！</div><div class="banner-detail">${escapeHTML(data.active_match_info.my_clan_name)} vs ${escapeHTML(data.active_match_info.opponent_name)}<br>恭喜，积分 +1</div>`;
             resultBanner.style.display = '';
-        } else {
+        } else if (result === 'lose') {
             resultBanner.className = 'match-result-banner lose';
             resultBanner.innerHTML = `<div class="banner-big-text">✗ 失败</div><div class="banner-detail">${escapeHTML(data.active_match_info.my_clan_name)} vs ${escapeHTML(data.active_match_info.opponent_name)}<br>积分 -1，再接再厉！</div>`;
+            resultBanner.style.display = '';
+        } else if (result === 'pending') {
+            // 匹配到其他联盟 → 待定
+            resultBanner.className = 'match-result-banner pending';
+            resultBanner.innerHTML = `<div class="banner-big-text">⏳ 待定</div><div class="banner-detail">${escapeHTML(data.active_match_info.my_clan_name)} vs ${escapeHTML(data.active_match_info.opponent_name)}<br>匹配到其他联盟，积分保持不变<br>请等待部落管理员判定结果</div>`;
+            resultBanner.style.display = '';
+        } else {
+            // admin_notice → 以部落管理通知为准
+            resultBanner.className = 'match-result-banner notice';
+            resultBanner.innerHTML = `<div class="banner-big-text">📢 以部落管理通知为准</div><div class="banner-detail">${escapeHTML(data.active_match_info.my_clan_name)} vs ${escapeHTML(data.active_match_info.opponent_name)}<br>${data.active_match_info.remark ? '类型：' + escapeHTML(data.active_match_info.remark) + '<br>' : ''}积分保持不变<br>最终结果请以部落管理员通知为准</div>`;
             resultBanner.style.display = '';
         }
     } else {
