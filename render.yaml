@@ -1,0 +1,35 @@
+# Render Blueprint - 一键部署到 Render Free Tier
+# 使用方法：
+#   1. 把整个仓库 push 到 GitHub
+#   2. 在 Render 控制台 New -> Blueprint -> 选择该仓库
+#   3. 在 Environment 里填好 DB_* 变量与 JWT_SECRET / ADMIN_PASSWORD
+services:
+  - type: web
+    name: clan-arena
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.10"
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "4000"
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        value: clan_arena
+      - key: DB_SSL
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: MONITOR_PASSWORD
+        sync: false
