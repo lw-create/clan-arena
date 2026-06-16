@@ -107,6 +107,35 @@ textarea { resize: vertical; font-family: inherit; }
 .empty-text { color: var(--text-muted); margin-bottom: 10px; font-size: 0.9rem; }
 .hint-text { color: var(--text-muted); font-size: 0.82rem; margin-bottom: 10px; }
 
+.config-stats-hints {
+    background: rgba(79, 70, 229, 0.1);
+    border: 1px solid rgba(79, 70, 229, 0.2);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.config-stats-hints .hint-text {
+    margin-bottom: 6px;
+}
+
+.hint-item {
+    display: flex;
+    align-items: center;
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+}
+
+.hint-label {
+    font-weight: 600;
+    color: var(--accent);
+    min-width: 100px;
+}
+
+.hint-desc {
+    color: var(--text-muted);
+}
+
 /* Bind reminder */
 .bind-reminder {
     text-align: center;

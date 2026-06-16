@@ -149,7 +149,18 @@
                 <!-- 配置统计（受全局开关控制，平时不显示） -->
                 <div class="card" id="config-stats-card" style="display:none">
                     <h2>📊 配置统计</h2>
-                    <p class="hint-text">填写本部落的大本营等级与人数分布。每栏 = 1 个等级 + 该等级人数。</p>
+                    <div class="config-stats-hints">
+                        <p class="hint-text">✏️ 填写本部落的成员等级分布情况</p>
+                        <div class="hint-item">
+                            <span class="hint-label">🏰 大本营等级</span>
+                            <span class="hint-desc">：选择该等级（如 15 本、16 本）</span>
+                        </div>
+                        <div class="hint-item">
+                            <span class="hint-label">👥 成员人数</span>
+                            <span class="hint-desc">：该等级有多少名成员</span>
+                        </div>
+                        <p class="hint-text" style="margin-top:4px">💡 示例：如果有 5 个 15 本成员和 8 个 16 本成员，就添加两栏分别填写</p>
+                    </div>
                     <div class="form-group">
                         <label>选择部落</label>
                         <select id="cs-clan-select"></select>

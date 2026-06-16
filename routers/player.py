@@ -187,9 +187,9 @@ def match_registered(req: MatchRegisteredRequest, user=Depends(get_current_user)
 
             cursor.execute("""
                 INSERT INTO matches (clan_a_id, clan_b_id, winner_id, loser_id,
-                                     score_before_a, score_before_b, is_registered, created_by, config_remark)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (my_clan_id, req.clan_id, winner_id, loser_id, score_a, score_b, 1, user["id"], req.config_remark or None))
+                                     score_before_a, score_before_b, is_registered, created_by, config_remark, round_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (my_clan_id, req.clan_id, winner_id, loser_id, score_a, score_b, 1, user["id"], req.config_remark or None, current_round["id"] if current_round else None))
 
             match_id = cursor.lastrowid
 
@@ -265,10 +265,10 @@ def match_unregistered(req: MatchUnregisteredRequest, user=Depends(get_current_u
 
             cursor.execute("""
                 INSERT INTO matches (clan_a_id, clan_b_id, winner_id, loser_id,
-                                     score_before_a, score_before_b, is_registered, remark, created_by, config_remark)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                     score_before_a, score_before_b, is_registered, remark, created_by, config_remark, round_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (my_clan_id, temp_clan_id, temp_clan_id, my_clan_id,
-                  score_before, 0, 0, req.remark, user["id"], req.config_remark or None))
+                  score_before, 0, 0, req.remark, user["id"], req.config_remark or None, current_round["id"] if current_round else None))
 
             match_id = cursor.lastrowid
 

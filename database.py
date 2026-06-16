@@ -218,6 +218,7 @@ MIGRATIONS = [
     "ALTER TABLE matches ADD COLUMN created_by INT AFTER remark",
     "ALTER TABLE matches ADD COLUMN confirmed_by INT DEFAULT NULL AFTER created_by",
     "ALTER TABLE matches ADD COLUMN config_remark VARCHAR(500) DEFAULT NULL AFTER remark",
+    "ALTER TABLE matches ADD COLUMN round_id INT DEFAULT NULL AFTER matched_at",
     "ALTER TABLE rounds ADD COLUMN match_start_time DATETIME DEFAULT NULL AFTER closed_at",
     "ALTER TABLE rounds ADD COLUMN match_end_time DATETIME DEFAULT NULL AFTER match_start_time",
     "ALTER TABLE rounds ADD COLUMN next_round_time DATETIME DEFAULT NULL AFTER match_end_time",

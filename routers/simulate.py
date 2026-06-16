@@ -194,9 +194,9 @@ def _do_round(admin_id: int, players: list, round_no: int) -> dict:
                 c.execute(
                     "INSERT INTO matches "
                     "(clan_a_id, clan_b_id, winner_id, loser_id, score_before_a, score_before_b, "
-                    " is_registered, created_by) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,1,%s)",
-                    (pa['clan_id'], pb['clan_id'], win_id, lose_id, sa, sb, pa['user_id']))
+                    " is_registered, created_by, round_id) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,1,%s,%s)",
+                    (pa['clan_id'], pb['clan_id'], win_id, lose_id, sa, sb, pa['user_id'], round_id))
 
                 for u in [pa, pb]:
                     try:
@@ -229,9 +229,9 @@ def _do_round(admin_id: int, players: list, round_no: int) -> dict:
             c.execute(
                 "INSERT INTO matches "
                 "(clan_a_id, clan_b_id, winner_id, loser_id, score_before_a, score_before_b, "
-                " is_registered, remark, created_by) "
-                "VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s)",
-                (p9['clan_id'], u1, u1, p9['clan_id'], s9, 0, '匹配到其他联盟', p9['user_id']))
+                " is_registered, remark, created_by, round_id) "
+                "VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s,%s)",
+                (p9['clan_id'], u1, u1, p9['clan_id'], s9, 0, '匹配到其他联盟', p9['user_id'], round_id))
             try:
                 c.execute("INSERT INTO round_registrations (round_id, user_id, clan_id) VALUES (%s,%s,%s)",
                           (round_id, p9['user_id'], p9['clan_id']))
@@ -259,9 +259,9 @@ def _do_round(admin_id: int, players: list, round_no: int) -> dict:
             c.execute(
                 "INSERT INTO matches "
                 "(clan_a_id, clan_b_id, winner_id, loser_id, score_before_a, score_before_b, "
-                " is_registered, remark, created_by) "
-                "VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s)",
-                (p10['clan_id'], u2, u2, p10['clan_id'], s10, 0, '匹配到实战营', p10['user_id']))
+                " is_registered, remark, created_by, round_id) "
+                "VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s,%s)",
+                (p10['clan_id'], u2, u2, p10['clan_id'], s10, 0, '匹配到实战营', p10['user_id'], round_id))
             try:
                 c.execute("INSERT INTO round_registrations (round_id, user_id, clan_id) VALUES (%s,%s,%s)",
                           (round_id, p10['user_id'], p10['clan_id']))

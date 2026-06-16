@@ -115,27 +115,23 @@ def list_matches(admin=Depends(require_admin)):
                 SELECT m.id, m.clan_a_id, m.clan_b_id, m.winner_id, m.loser_id,
                        m.score_before_a, m.score_before_b, m.is_registered, m.remark,
                        m.config_remark, m.matched_at, m.created_by, m.confirmed_by,
+                       m.round_id,
                        ca.name as clan_a_name, cb.name as clan_b_name,
-                       cw.name as winner_name, cl.name as loser_name
+                       cw.name as winner_name, cl.name as loser_name,
+                       r.round_no
                 FROM matches m
                 JOIN clans ca ON m.clan_a_id = ca.id
                 JOIN clans cb ON m.clan_b_id = cb.id
                 LEFT JOIN clans cw ON m.winner_id = cw.id
                 LEFT JOIN clans cl ON m.loser_id = cl.id
+                LEFT JOIN rounds r ON m.round_id = r.id
                 ORDER BY m.matched_at DESC
                 LIMIT 100
             """)
             matches = cursor.fetchall()
 
             for m in matches:
-                m["round_no"] = None
-                m["is_current_round"] = False
-                for r in all_rounds:
-                    if m["matched_at"] >= r["opened_at"]:
-                        if r["closed_at"] is None or m["matched_at"] < r["closed_at"]:
-                            m["round_no"] = r["round_no"]
-                            m["is_current_round"] = (r["id"] == current_round_id)
-                            break
+                m["is_current_round"] = (m["round_id"] == current_round_id)
 
     return {"matches": matches}
 
@@ -389,10 +385,8 @@ def admin_cancel_match(match_id: int, admin=Depends(require_admin)):
             if not current_round:
                 raise HTTPException(status_code=403, detail="当前无进行中的轮次，无法撤销")
 
-            # 验证该匹配属于本轮
-            cursor.execute("SELECT opened_at FROM rounds WHERE id = %s", (current_round["id"],))
-            round_info = cursor.fetchone()
-            if round_info and match["matched_at"] < round_info["opened_at"]:
+            # 验证该匹配属于本轮（使用 round_id 精确匹配）
+            if match["round_id"] != current_round["id"]:
                 raise HTTPException(status_code=403, detail="只能撤销当前轮次的对战记录")
 
             is_registered = bool(match["is_registered"])
