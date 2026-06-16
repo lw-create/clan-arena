@@ -1,14 +1,13 @@
 """
 一次性数据模拟端点
-通过访问 /api/simulate/run 触发（仅在 SIMULATE_TOKEN 环境变量匹配时执行）
-部署完成后建议从代码中删除此模块
+访问 /api/simulate/run 触发，自动写入数据库
+部署完成后建议删除此模块
 """
 import os
 import random
 import bcrypt
 
-from fastapi import APIRouter, HTTPException, Header
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException
 
 from database import get_db, init_db
 
@@ -24,23 +23,11 @@ def _log(msg: str):
 
 
 @router.post("/run")
-def run_simulation(x_token: str = Header(default="")):
+def run_simulation():
     """
-    运行数据模拟：
-    - 创建 admin / 10 玩家
-    - 绑定部落
-    - 模拟 2 轮对战（含已登记和未登记）
-    - 返回详细报告
-
-    调用方式（需在请求头带 X-Token，与环境变量 SIMULATE_TOKEN 一致）：
-        curl -X POST -H "X-Token: your_secret" https://your-app.onrender.com/api/simulate/run
+    一键数据模拟：创建 admin/10 玩家 + 绑定部落 + 2 轮对战
+    直接调用即可，无需 token
     """
-    expected = os.environ.get("SIMULATE_TOKEN", "").strip()
-    if not expected:
-        raise HTTPException(status_code=503, detail="SIMULATE_TOKEN 未设置，端点不可用")
-    if x_token != expected:
-        raise HTTPException(status_code=403, detail="无效的 X-Token")
-
     _log("开始执行数据模拟...")
     init_db()
     report = _do_simulate()
@@ -49,9 +36,9 @@ def run_simulation(x_token: str = Header(default="")):
 
 
 @router.get("/run")
-def run_simulation_get(x_token: str = Header(default="")):
-    """GET 方式（方便从浏览器触发）"""
-    return run_simulation(x_token=x_token)
+def run_simulation_get():
+    """GET 方式（方便从浏览器地址栏触发）"""
+    return run_simulation()
 
 
 def _do_simulate() -> dict:
