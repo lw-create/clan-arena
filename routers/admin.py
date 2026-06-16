@@ -77,6 +77,8 @@ def adjust_score(clan_id: int, delta: int, reason: str, admin=Depends(require_ad
             before_score = clan["score"]
             after_score = before_score + delta
             cursor.execute("UPDATE clans SET score = %s WHERE id = %s", (after_score, clan_id))
+            notice = f"管理员调整了「{clan['name']}」积分：{before_score} → {after_score}（{delta:+d}）。原因：{reason}"
+            cursor.execute("INSERT INTO notifications (content) VALUES (%s)", (notice,))
             log_operation(
                 conn,
                 admin["id"],

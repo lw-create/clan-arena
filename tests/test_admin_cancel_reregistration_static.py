@@ -41,6 +41,21 @@ class AdminCancelReregistrationStaticTests(unittest.TestCase):
         self.assertIn("renderAdminCancelNotice", app)
         self.assertIn("管理员已撤销您的本轮登记，请重新登记", app)
 
+    def test_score_adjustment_creates_system_notification(self):
+        admin = read("routers/admin.py")
+        self.assertIn("INSERT INTO notifications", admin)
+        self.assertIn("管理员调整了", admin)
+        self.assertIn("积分：", admin)
+        self.assertLess(
+            admin.index("UPDATE clans SET score"),
+            admin.index("INSERT INTO notifications"),
+        )
+
+    def test_unregistered_match_copy_says_score_unchanged(self):
+        app = read("static/app.js")
+        self.assertIn("积分保持不变", app)
+        self.assertNotIn("默认判输（-1分）", app)
+
 
 if __name__ == "__main__":
     unittest.main()

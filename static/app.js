@@ -521,7 +521,7 @@ async function matchUnregistered() {
     // 前端配置必填校验
     const configRequired = currentUser && currentUser.current_round && currentUser.current_round.config_required;
     if (configRequired && !configRemark) { alert('本轮要求填写对战配置，请先填写配置信息'); return; }
-    if (!await customConfirm(`对方部落未登记，将默认判输（-1分）\n匹配类型：${category}\n\n确认提交？`, '确认提交')) return;
+    if (!await customConfirm(`对方部落未登记，本次登记将记录为未匹配成功，积分保持不变。\n匹配类型：${category}\n\n确认提交？`, '确认提交')) return;
     try {
         const data = await api('POST', '/match/unregistered', { clan_name: name, clan_code: code, tags: tags, remark: category, config_remark: configRemark });
         showMatchResult(data, 'failed');
