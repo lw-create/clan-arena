@@ -318,11 +318,12 @@ def close_round(admin=Depends(require_admin)):
 
 @router.get("/round/list")
 def list_rounds(admin=Depends(require_admin)):
-    """查看轮次列表"""
+    """查看轮次列表（含登记人数统计）"""
     with get_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
-                SELECT r.*, u.username as opened_by_name
+                SELECT r.*, u.username as opened_by_name,
+                       (SELECT COUNT(*) FROM round_registrations rr WHERE rr.round_id = r.id) as registrations_count
                 FROM rounds r
                 LEFT JOIN users u ON r.opened_by = u.id
                 ORDER BY r.id DESC

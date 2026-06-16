@@ -1017,14 +1017,16 @@ async function loadRounds() {
             el.innerHTML = '<p class="empty-text">暂无轮次记录</p>';
             return;
         }
-        let html = '<div class="table-wrapper"><table><tr><th>轮次</th><th>状态</th><th>开启者</th><th>匹配时间</th><th>截止时间</th><th>下一轮时间</th><th>开启时间</th><th>关闭时间</th></tr>';
+        let html = '<div class="table-wrapper"><table><tr><th>轮次</th><th>状态</th><th>登记人数</th><th>开启者</th><th>匹配时间</th><th>截止时间</th><th>下一轮时间</th><th>开启时间</th><th>关闭时间</th></tr>';
         data.rounds.forEach(r => {
             const statusBadge = r.status === 'open'
                 ? '<span class="badge" style="background:rgba(16,185,129,0.2);color:var(--success)">进行中</span>'
                 : '<span class="badge" style="background:rgba(107,114,128,0.2);color:#6b7280">已关闭</span>';
+            const regCount = r.registrations_count || 0;
             html += `<tr>
                 <td>第${r.round_no}轮</td>
                 <td>${statusBadge}</td>
+                <td>${regCount}人</td>
                 <td>${escapeHTML(r.opened_by_name) || '-'}</td>
                 <td>${r.match_start_time ? formatDateTime(r.match_start_time) : '-'}</td>
                 <td>${r.match_end_time ? formatDateTime(r.match_end_time) : '-'}</td>
