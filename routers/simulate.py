@@ -13,6 +13,11 @@ from auth import hash_password  # 使用统一的密码哈希函数
 
 router = APIRouter(prefix="/api/simulate", tags=["模拟"])
 
+# 默认密码常量
+DEFAULT_ADMIN_PASSWORD = "admin123456"
+DEFAULT_MONITOR_PASSWORD = "monitor123456"
+DEFAULT_PLAYER_PASSWORD = "123456"
+
 
 def _hash_pwd(pwd: str) -> str:
     """使用auth.py中的hash_password确保哈希方式一致"""
@@ -74,19 +79,19 @@ def _clear_data():
             admin_row = c.fetchone()
             if admin_row:
                 c.execute("UPDATE users SET password_hash=%s, plain_password=%s, role='admin', is_super_admin=1, status='active', must_change_pwd=0 WHERE username='admin'",
-                          (_hash_pwd('admin123'), 'admin123'))
+                          (_hash_pwd(DEFAULT_ADMIN_PASSWORD), DEFAULT_ADMIN_PASSWORD))
             else:
                 c.execute("INSERT INTO users (username, password_hash, plain_password, role, is_super_admin, status, must_change_pwd) VALUES (%s,%s,%s,'admin',1,'active',0)",
-                          ('admin', _hash_pwd('admin123'), 'admin123'))
+                          ('admin', _hash_pwd(DEFAULT_ADMIN_PASSWORD), DEFAULT_ADMIN_PASSWORD))
 
             c.execute("SELECT id FROM users WHERE username='monitor'")
             monitor_row = c.fetchone()
             if monitor_row:
                 c.execute("UPDATE users SET password_hash=%s, plain_password=%s, role='monitor', status='active', must_change_pwd=0 WHERE username='monitor'",
-                          (_hash_pwd('monitor123'), 'monitor123'))
+                          (_hash_pwd(DEFAULT_MONITOR_PASSWORD), DEFAULT_MONITOR_PASSWORD))
             else:
                 c.execute("INSERT INTO users (username, password_hash, plain_password, role, status, must_change_pwd) VALUES (%s,%s,%s,'monitor','active',0)",
-                          ('monitor', _hash_pwd('monitor123'), 'monitor123'))
+                          ('monitor', _hash_pwd(DEFAULT_MONITOR_PASSWORD), DEFAULT_MONITOR_PASSWORD))
 
             # 删除其他用户
             try:
@@ -125,7 +130,7 @@ def _create_users() -> tuple:
             players = []
             for i, name in enumerate(player_names):
                 username = f"player{i+1:02d}"
-                password = "123456"
+                password = DEFAULT_PLAYER_PASSWORD
                 clan_name = f"部落{name}"
                 clan_code = f"CL{i+1:03d}"
                 initial_score = random.randint(10, 19)
@@ -326,8 +331,9 @@ def _build_report(admin_id, players, round1, round2) -> dict:
         ],
         "clan_changes": clan_changes,
         "test_accounts": {
-            "admin": "admin / admin123 (超管)",
-            "players": [f"{p['username']} / 123456" for p in players]
+            "admin": f"admin / {DEFAULT_ADMIN_PASSWORD} (超管)",
+            "monitor": f"monitor / {DEFAULT_MONITOR_PASSWORD}",
+            "players": [f"{p['username']} / {DEFAULT_PLAYER_PASSWORD}" for p in players]
         },
         "message": "✅ 模拟数据已写入数据库，登录后即可查看"
     }
