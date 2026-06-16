@@ -121,12 +121,14 @@ async function loadPlayerData() {
     updateConfigHint(data.current_round);
 
     // 匹配成功提示：隐藏或显示登记区域，并展示胜负大横幅
-    const matchCard = document.getElementById('match-card');
+    const matchSuccessCard = document.getElementById('match-success-card');
+    const matchFailedCard = document.getElementById('match-failed-card');
     const matchDone = document.getElementById('match-done');
     const resultBanner = document.getElementById('match-result-banner');
     const regBanner = document.getElementById('registration-status-banner');
     if (data.has_active_match && data.active_match_info) {
-        matchCard.style.display = 'none';
+        matchSuccessCard.style.display = 'none';
+        matchFailedCard.style.display = 'none';
         matchDone.style.display = 'none';
         resultBanner.style.display = '';
         // 根据 result 显示大横幅
@@ -160,11 +162,16 @@ async function loadPlayerData() {
             resultBanner.style.display = '';
         }
     } else {
-        matchCard.style.display = '';
+        // 默认两个卡片都隐藏，等用户从弹窗中选择
+        matchSuccessCard.style.display = 'none';
+        matchFailedCard.style.display = 'none';
         matchDone.style.display = 'none';
         resultBanner.style.display = 'none';
         resultBanner.innerHTML = '';
     }
+
+    // 配置统计卡片显示控制
+    renderConfigStatsCard(data.config_stats_enabled);
 
     // 积分操作指南
     const guideEl = document.getElementById('score-guide-player');
@@ -186,6 +193,9 @@ async function loadPlayerData() {
 
     renderMyClans();
     await Promise.all([loadLeaderboard(), loadMatchHistory(), loadPlayerUnknownClans()]);
+
+    // 触发登记提醒弹窗
+    maybeShowMatchPrompt(data);
 }
 
 function renderMyClans() {
@@ -215,14 +225,17 @@ function renderMyClans() {
 
         clanEl.innerHTML = h;
 
-        // 更新出战部落选择框
+        // 更新出战部落选择框（两个卡片各一份）
         const sel = document.getElementById('my-clan-select');
-        sel.innerHTML = myClans.map(c => `<option value="${c.id}"${c.id === activeClanId ? ' selected' : ''}>${escapeHTML(c.name)} (${c.score})</option>`).join('');
-        document.getElementById('match-card').style.display = '';
+        const selFailed = document.getElementById('my-clan-select-failed');
+        const opts = myClans.map(c => `<option value="${c.id}"${c.id === activeClanId ? ' selected' : ''}>${escapeHTML(c.name)} (${c.score})</option>`).join('');
+        sel.innerHTML = opts;
+        if (selFailed) selFailed.innerHTML = opts;
         document.getElementById('history-card').style.display = '';
     } else {
         clanEl.innerHTML = `<div class="bind-reminder"><p>⚠️ 您还未绑定部落，请先绑定！</p><button class="btn btn-primary" onclick="showBindModal()">绑定部落</button></div>`;
-        document.getElementById('match-card').style.display = 'none';
+        document.getElementById('match-success-card').style.display = 'none';
+        document.getElementById('match-failed-card').style.display = 'none';
         document.getElementById('history-card').style.display = 'none';
     }
 }
@@ -286,25 +299,22 @@ function renderRoundTime(currentRound) {
         card.style.display = 'none';
         return;
     }
-    const start = currentRound.match_start_time;
-    const end = currentRound.match_end_time;
-    const next = currentRound.next_round_time;
-    if (!start && !end && !next) {
+    const start = currentRound.next_match_start_time;
+    const end = currentRound.next_match_end_time;
+    if (!start && !end) {
         card.style.display = 'none';
         return;
     }
     card.style.display = '';
-    let html = '';
-    if (start) {
-        html += `<div class="round-time-item">🕐 匹配开始：<strong>${formatDateTime(start)}</strong></div>`;
+    let timeText;
+    if (start && end) {
+        timeText = `${formatDateTime(start)} ~ ${formatDateTime(end)}`;
+    } else if (start) {
+        timeText = `${formatDateTime(start)} ~ 待定`;
+    } else {
+        timeText = `待定 ~ ${formatDateTime(end)}`;
     }
-    if (end) {
-        html += `<div class="round-time-item">⏰ 匹配截止：<strong>${formatDateTime(end)}</strong></div>`;
-    }
-    if (next) {
-        html += `<div class="round-time-item next-round">📅 下一轮匹配：<strong>${formatDateTime(next)}</strong></div>`;
-    }
-    el.innerHTML = html;
+    el.innerHTML = `<div class="round-time-item next-round">🕐 下一轮匹配时间：<strong>${timeText}</strong></div>`;
 }
 
 function formatDateTime(d) {
@@ -488,7 +498,7 @@ async function matchUnregistered() {
     const code = document.getElementById('unreg-clan-code').value.trim();
     const tags = document.getElementById('unreg-clan-tags').value.trim();
     const category = document.getElementById('unreg-category').value;
-    const configRemark = document.getElementById('config-remark').value.trim();
+    const configRemark = document.getElementById('config-remark-failed').value.trim();
     if (!name || !code) { alert('请填写对方部落名称和标签'); return; }
     // 前端配置必填校验
     const configRequired = currentUser && currentUser.current_round && currentUser.current_round.config_required;
@@ -496,15 +506,20 @@ async function matchUnregistered() {
     if (!await customConfirm(`对方部落未登记，将默认判输（-1分）\n匹配类型：${category}\n\n确认提交？`, '确认提交')) return;
     try {
         const data = await api('POST', '/match/unregistered', { clan_name: name, clan_code: code, tags: tags, remark: category, config_remark: configRemark });
-        showMatchResult(data);
+        showMatchResult(data, 'failed');
     } catch {}
 }
 
-function showMatchResult(data) {
-    const myClanName = document.getElementById('my-clan-select').selectedOptions[0].text.split(' (')[0];
+function showMatchResult(data, mode) {
+    // mode: 'success' / 'failed'，决定结果显示在哪个卡片里
+    const elId = mode === 'failed' ? 'match-result-failed' : 'match-result';
+    const el = document.getElementById(elId);
+    const clanSelect = mode === 'failed' ? document.getElementById('my-clan-select-failed') : document.getElementById('my-clan-select');
+    const myClanName = clanSelect.selectedOptions[0].text.split(' (')[0];
     const banner = document.getElementById('match-result-banner');
     const matchDone = document.getElementById('match-done');
-    const matchCard = document.getElementById('match-card');
+    const matchSuccessCard = document.getElementById('match-success-card');
+    const matchFailedCard = document.getElementById('match-failed-card');
     if (data.is_registered) {
         const opponentName = data.winner.name === myClanName ? data.loser.name : data.winner.name;
         const iWin = data.winner.name === myClanName;
@@ -526,7 +541,8 @@ function showMatchResult(data) {
                 </div>`;
         }
         banner.style.display = '';
-        matchCard.style.display = 'none';
+        matchSuccessCard.style.display = 'none';
+        matchFailedCard.style.display = 'none';
         matchDone.style.display = 'none';
     } else {
         const opponentName = data.loser.name || '对方部落';
@@ -538,7 +554,8 @@ function showMatchResult(data) {
                 <div class="banner-score">对方未登记，积分保持不变（当前：${data.loser.score}）</div>
             </div>`;
         banner.style.display = '';
-        matchCard.style.display = 'none';
+        matchSuccessCard.style.display = 'none';
+        matchFailedCard.style.display = 'none';
         matchDone.style.display = 'none';
     }
     document.getElementById('search-keyword').value = '';
@@ -547,6 +564,7 @@ function showMatchResult(data) {
     document.getElementById('unreg-clan-code').value = '';
     document.getElementById('unreg-category').selectedIndex = 0;
     document.getElementById('config-remark').value = '';
+    document.getElementById('config-remark-failed').value = '';
     banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
     loadPlayerDataLight();
 }
@@ -565,11 +583,13 @@ async function loadPlayerDataLight() {
 
         // 更新匹配状态
         const matchDone = document.getElementById('match-done');
-        const matchCard = document.getElementById('match-card');
+        const matchSuccessCard = document.getElementById('match-success-card');
+        const matchFailedCard = document.getElementById('match-failed-card');
         const resultBanner = document.getElementById('match-result-banner');
         const regBanner = document.getElementById('registration-status-banner');
         if (data.has_active_match && data.active_match_info) {
-            matchCard.style.display = 'none';
+            matchSuccessCard.style.display = 'none';
+            matchFailedCard.style.display = 'none';
             matchDone.style.display = 'none';
             resultBanner.style.display = '';
             if (data.active_match_info.result === 'win') {
@@ -606,7 +626,7 @@ async function loadPlayerDataLight() {
                     </div>`;
             }
         } else {
-            matchCard.style.display = '';
+            // 轻量刷新不主动展开，保持当前用户的选择
             matchDone.style.display = 'none';
             resultBanner.style.display = 'none';
             resultBanner.innerHTML = '';
@@ -780,6 +800,9 @@ function switchTab(e, name) {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     e.target.classList.add('active');
     document.getElementById(`tab-${name}`).classList.add('active');
+    if (name === 'config-stats') {
+        loadConfigStats();
+    }
 }
 
 async function loadUserList() {
@@ -1017,7 +1040,7 @@ async function loadRounds() {
             el.innerHTML = '<p class="empty-text">暂无轮次记录</p>';
             return;
         }
-        let html = '<div class="table-wrapper"><table><tr><th>轮次</th><th>状态</th><th>登记人数</th><th>开启者</th><th>匹配时间</th><th>截止时间</th><th>下一轮时间</th><th>开启时间</th><th>关闭时间</th></tr>';
+        let html = '<div class="table-wrapper"><table><tr><th>轮次</th><th>状态</th><th>登记人数</th><th>开启者</th><th>下一轮匹配开始</th><th>下一轮匹配结束</th><th>开启时间</th><th>关闭时间</th></tr>';
         data.rounds.forEach(r => {
             const statusBadge = r.status === 'open'
                 ? '<span class="badge" style="background:rgba(16,185,129,0.2);color:var(--success)">进行中</span>'
@@ -1028,9 +1051,8 @@ async function loadRounds() {
                 <td>${statusBadge}</td>
                 <td>${regCount}人</td>
                 <td>${escapeHTML(r.opened_by_name) || '-'}</td>
-                <td>${r.match_start_time ? formatDateTime(r.match_start_time) : '-'}</td>
-                <td>${r.match_end_time ? formatDateTime(r.match_end_time) : '-'}</td>
-                <td>${r.next_round_time ? formatDateTime(r.next_round_time) : '-'}</td>
+                <td>${r.next_match_start_time ? formatDateTime(r.next_match_start_time) : '-'}</td>
+                <td>${r.next_match_end_time ? formatDateTime(r.next_match_end_time) : '-'}</td>
                 <td>${formatDate(r.opened_at)}</td>
                 <td>${r.closed_at ? formatDate(r.closed_at) : '-'}</td>
             </tr>`;
@@ -1039,18 +1061,24 @@ async function loadRounds() {
         el.innerHTML = html;
 
         if (openRound) {
-            if (openRound.match_start_time) {
-                document.getElementById('round-start-time').value = toLocalDatetime(openRound.match_start_time);
+            if (openRound.next_match_start_time) {
+                document.getElementById('next-match-start-time').value = toLocalDatetime(openRound.next_match_start_time);
+            } else {
+                document.getElementById('next-match-start-time').value = '';
             }
-            if (openRound.match_end_time) {
-                document.getElementById('round-end-time').value = toLocalDatetime(openRound.match_end_time);
-            }
-            if (openRound.next_round_time) {
-                document.getElementById('next-round-time').value = toLocalDatetime(openRound.next_round_time);
+            if (openRound.next_match_end_time) {
+                document.getElementById('next-match-end-time').value = toLocalDatetime(openRound.next_match_end_time);
+            } else {
+                document.getElementById('next-match-end-time').value = '';
             }
             document.getElementById('config-required-toggle').checked = !!openRound.config_required;
             document.getElementById('maintenance-toggle').checked = !!openRound.maintenance;
         }
+        // 加载配置统计开关（与轮次无关）
+        try {
+            const cs = await api('GET', '/admin/settings/config-stats');
+            document.getElementById('config-stats-toggle').checked = !!cs.enabled;
+        } catch {}
     } catch {}
 }
 
@@ -1071,23 +1099,40 @@ async function openRound() {
 }
 
 async function updateRoundTime() {
-    const startTime = document.getElementById('round-start-time').value || null;
-    const endTime = document.getElementById('round-end-time').value || null;
-    const nextTime = document.getElementById('next-round-time').value || null;
+    const nextStart = document.getElementById('next-match-start-time').value || null;
+    const nextEnd = document.getElementById('next-match-end-time').value || null;
     const configRequired = document.getElementById('config-required-toggle').checked;
     const maintenance = document.getElementById('maintenance-toggle').checked;
+    const configStatsEnabled = document.getElementById('config-stats-toggle').checked;
 
-    if (!startTime && !endTime && !nextTime) {
-        // 只有配置必填开关变化也可以保存
+    if (nextStart && nextEnd && nextStart >= nextEnd) {
+        alert('下一轮匹配开始时间必须早于结束时间');
+        return;
     }
+
     try {
-        const body = { config_required: configRequired, maintenance: maintenance };
-        if (startTime) body.match_start_time = startTime.replace('T', ' ') + ':00';
-        if (endTime) body.match_end_time = endTime.replace('T', ' ') + ':00';
-        if (nextTime) body.next_round_time = nextTime.replace('T', ' ') + ':00';
+        const body = {
+            config_required: configRequired,
+            maintenance: maintenance,
+            next_match_start_time: nextStart ? (nextStart.replace('T', ' ') + ':00') : '',
+            next_match_end_time:   nextEnd   ? (nextEnd.replace('T', ' ') + ':00')   : '',
+        };
         const data = await api('PUT', '/admin/round/settings', body);
-        alert(data.message);
+        // 单独保存配置统计全局开关
+        await api('POST', '/admin/settings/config-stats', { enabled: configStatsEnabled });
+        alert((data.message || '已保存') + '\n配置统计：' + (configStatsEnabled ? '已开启' : '已关闭'));
         loadRounds();
+    } catch {}
+}
+
+async function clearAllClanConfigs() {
+    if (!await customConfirm('确定要清空全部配置统计数据吗？\n\n此操作不可撤销！', '清空')) return;
+    try {
+        const data = await api('DELETE', '/admin/clan-configs');
+        alert(data.message || '已清空');
+        if (document.getElementById('tab-config-stats').classList.contains('active')) {
+            loadConfigStats();
+        }
     } catch {}
 }
 
@@ -1344,6 +1389,261 @@ async function checkUnknownClan(inputCode) {
 
 function fillUnregName(name) {
     document.getElementById('unreg-clan-name').value = name;
+}
+
+// ========== 登记提醒弹窗 + 卡片切换 ==========
+function maybeShowMatchPrompt(data) {
+    // 条件：当前轮次进行中、用户绑定了部落、且未登记本轮
+    if (!data.current_round || !data.clans || data.clans.length === 0) return;
+    if (data.has_active_match) return;
+    if (data.my_registration && data.my_registration.registered) return;
+
+    const roundId = data.current_round.id;
+    const flag = `match_prompt_shown_round_${roundId}`;
+    if (sessionStorage.getItem(flag) === '1') return;
+
+    sessionStorage.setItem(flag, '1');
+    const modal = document.getElementById('match-prompt-modal');
+    if (modal) modal.classList.add('active');
+}
+
+function closeMatchPrompt() {
+    document.getElementById('match-prompt-modal').classList.remove('active');
+}
+
+function chooseMatchSuccess() {
+    closeMatchPrompt();
+    document.getElementById('match-success-card').style.display = '';
+    document.getElementById('match-failed-card').style.display = 'none';
+    document.getElementById('match-success-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function chooseMatchFailed() {
+    closeMatchPrompt();
+    document.getElementById('match-failed-card').style.display = '';
+    document.getElementById('match-success-card').style.display = 'none';
+    document.getElementById('match-failed-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function switchToFailed() {
+    document.getElementById('match-success-card').style.display = 'none';
+    document.getElementById('match-failed-card').style.display = '';
+    document.getElementById('match-failed-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function switchToSuccess() {
+    document.getElementById('match-failed-card').style.display = 'none';
+    document.getElementById('match-success-card').style.display = '';
+    document.getElementById('match-success-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ========== 配置统计（玩家端） ==========
+let csState = { rows: [], target: null, clanId: null };
+
+function renderConfigStatsCard(enabled) {
+    const card = document.getElementById('config-stats-card');
+    if (!card) return;
+    if (!enabled || !myClans || myClans.length === 0) {
+        card.style.display = 'none';
+        return;
+    }
+    card.style.display = '';
+
+    // 填充部落选择框
+    const sel = document.getElementById('cs-clan-select');
+    sel.innerHTML = myClans.map(c => `<option value="${c.id}">${escapeHTML(c.name)} (${escapeHTML(c.code)})</option>`).join('');
+    sel.onchange = () => loadClanConfig(parseInt(sel.value));
+
+    // 默认加载第一个部落的配置
+    loadClanConfig(parseInt(sel.value));
+}
+
+async function loadClanConfig(clanId) {
+    csState.clanId = clanId;
+    try {
+        const data = await api('GET', `/clan-config?clan_id=${clanId}`);
+        csState.target = data.target_total;
+        csState.rows = (data.items && data.items.length > 0)
+            ? data.items.map(it => ({ th: it.th_level, num: it.member_count }))
+            : [{ th: '', num: '' }];
+        if (data.target_total) {
+            const tr = document.querySelector(`input[name="cs-target"][value="${data.target_total}"]`);
+            if (tr) tr.checked = true;
+        } else {
+            document.querySelectorAll('input[name="cs-target"]').forEach(r => r.checked = false);
+        }
+        renderConfigRows();
+    } catch {}
+}
+
+function buildLevelOptions(selected) {
+    let html = '<option value="">-</option>';
+    for (let i = 0; i <= 100; i++) {
+        html += `<option value="${i}"${i === selected ? ' selected' : ''}>${i} 本</option>`;
+    }
+    return html;
+}
+
+function buildCountOptions(selected) {
+    let html = '<option value="">-</option>';
+    for (let i = 0; i <= 40; i++) {
+        html += `<option value="${i}"${i === selected ? ' selected' : ''}>${i} 人</option>`;
+    }
+    return html;
+}
+
+function renderConfigRows() {
+    const wrap = document.getElementById('cs-rows');
+    let html = '';
+    csState.rows.forEach((row, idx) => {
+        html += `<div class="cs-row" style="display:flex;gap:8px;align-items:center;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px">
+            <span style="color:var(--text-muted);font-size:0.82rem">第 ${idx + 1} 栏</span>
+            <label style="margin:0;font-size:0.82rem">大本营</label>
+            <select onchange="updateConfigRow(${idx}, 'th', this.value)" style="width:auto">
+                ${buildLevelOptions(row.th === '' ? null : Number(row.th))}
+            </select>
+            <label style="margin:0;font-size:0.82rem">人数</label>
+            <select onchange="updateConfigRow(${idx}, 'num', this.value)" style="width:auto">
+                ${buildCountOptions(row.num === '' ? null : Number(row.num))}
+            </select>
+            <button class="btn btn-sm btn-danger" onclick="removeConfigRow(${idx})" style="margin-left:auto">×</button>
+        </div>`;
+    });
+    wrap.innerHTML = html;
+    refreshConfigSummary();
+}
+
+function updateConfigRow(idx, field, value) {
+    csState.rows[idx][field] = value === '' ? '' : Number(value);
+    refreshConfigSummary();
+}
+
+function addConfigRow() {
+    csState.rows.push({ th: '', num: '' });
+    renderConfigRows();
+}
+
+function removeConfigRow(idx) {
+    csState.rows.splice(idx, 1);
+    if (csState.rows.length === 0) csState.rows.push({ th: '', num: '' });
+    renderConfigRows();
+}
+
+function refreshConfigSummary() {
+    const targetRadio = document.querySelector('input[name="cs-target"]:checked');
+    const target = targetRadio ? Number(targetRadio.value) : null;
+    csState.target = target;
+    const sum = csState.rows.reduce((acc, r) => acc + (r.num === '' ? 0 : Number(r.num)), 0);
+
+    // 等级重复检查
+    const levels = csState.rows.filter(r => r.th !== '').map(r => Number(r.th));
+    const dupes = levels.filter((v, i) => levels.indexOf(v) !== i);
+
+    const summaryEl = document.getElementById('cs-summary');
+    const errEl = document.getElementById('cs-error');
+    const btn = document.getElementById('cs-save-btn');
+
+    let summaryColor = 'var(--text-muted)';
+    if (target !== null) {
+        summaryColor = sum === target ? 'var(--success)' : 'var(--danger)';
+    }
+    summaryEl.innerHTML = `当前合计：<strong style="color:${summaryColor}">${sum}</strong> / ${target ?? '?'}`;
+
+    let err = '';
+    if (target === null) err = '请先选择总人数目标（40 或 50）';
+    else if (dupes.length > 0) err = `大本营等级 ${[...new Set(dupes)].join(', ')} 不能重复出现`;
+    else if (csState.rows.some(r => r.th === '' || r.num === '')) err = '每栏的大本营等级和人数都必须填写';
+    else if (sum !== target) err = `合计 ${sum} 不等于目标 ${target}`;
+
+    errEl.textContent = err;
+    btn.disabled = !!err;
+    btn.style.opacity = err ? '0.5' : '1';
+    btn.style.cursor = err ? 'not-allowed' : 'pointer';
+}
+
+document.addEventListener('change', (e) => {
+    if (e.target && e.target.name === 'cs-target') refreshConfigSummary();
+});
+
+async function saveClanConfig() {
+    if (!csState.clanId) { alert('请选择部落'); return; }
+    if (!csState.target) { alert('请选择总人数目标'); return; }
+    const items = csState.rows.map(r => ({ th_level: Number(r.th), member_count: Number(r.num) }));
+    try {
+        const data = await api('POST', '/clan-config', {
+            clan_id: csState.clanId,
+            target_total: csState.target,
+            items: items,
+        });
+        alert(data.message || '配置已保存');
+    } catch {}
+}
+
+// ========== 配置统计（管理员端） ==========
+async function loadConfigStats() {
+    try {
+        const setting = await api('GET', '/admin/settings/config-stats');
+        const statusEl = document.getElementById('cs-admin-status');
+        if (statusEl) {
+            statusEl.textContent = setting.enabled
+                ? '配置统计当前已开启，成员可在玩家端填写配置。'
+                : '配置统计当前未开启，玩家端不会显示填写入口（已收集的旧数据仍然保留）。';
+        }
+    } catch {}
+
+    try {
+        const ov = await api('GET', '/admin/config-stats/overview');
+        const el = document.getElementById('cs-overview-content');
+        if (!ov.overview || ov.overview.length === 0) {
+            el.innerHTML = '<p class="empty-text">暂无配置数据</p>';
+        } else {
+            let html = '<div class="table-wrapper"><table><tr><th>大本营等级</th><th>已填部落数</th><th>总人数</th><th>平均每部落人数</th></tr>';
+            ov.overview.forEach(r => {
+                html += `<tr>
+                    <td><strong>${r.th_level} 本</strong></td>
+                    <td>${r.clan_count}</td>
+                    <td>${r.total_members}</td>
+                    <td>${r.avg_per_clan}</td>
+                </tr>`;
+            });
+            html += '</table></div>';
+            el.innerHTML = html;
+        }
+    } catch {}
+
+    try {
+        const cl = await api('GET', '/admin/config-stats/clans');
+        const detEl = document.getElementById('cs-clans-content');
+        if (!cl.configs || cl.configs.length === 0) {
+            detEl.innerHTML = '<p class="empty-text">暂无部落填写配置</p>';
+        } else {
+            let html = '<div class="table-wrapper"><table><tr><th>部落</th><th>总人数</th><th>配置</th><th>更新人</th><th>更新时间</th></tr>';
+            cl.configs.forEach(c => {
+                const cfg = (c.items || []).map(it => `${it.th_level}×${it.member_count}`).join(', ');
+                html += `<tr>
+                    <td><strong>${escapeHTML(c.clan_name)}</strong><br><span style="font-size:0.78rem;color:var(--text-muted)">${escapeHTML(c.clan_code)}</span></td>
+                    <td>${c.total_members} / ${c.target_total}</td>
+                    <td>${escapeHTML(cfg)}</td>
+                    <td>${escapeHTML(c.updated_by_name) || '-'}</td>
+                    <td>${formatDate(c.updated_at)}</td>
+                </tr>`;
+            });
+            html += '</table></div>';
+            detEl.innerHTML = html;
+        }
+
+        const missEl = document.getElementById('cs-missing-content');
+        if (!cl.missing || cl.missing.length === 0) {
+            missEl.innerHTML = '<p class="empty-text">所有部落均已填写配置 🎉</p>';
+        } else {
+            let mh = '<div class="table-wrapper"><table><tr><th>部落名称</th><th>标签</th></tr>';
+            cl.missing.forEach(m => {
+                mh += `<tr><td>${escapeHTML(m.name)}</td><td>${escapeHTML(m.code)}</td></tr>`;
+            });
+            mh += '</table></div>';
+            missEl.innerHTML = mh;
+        }
+    } catch {}
 }
 
 // 自动登录

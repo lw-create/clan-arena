@@ -159,6 +159,8 @@ TABLES = [
         match_start_time DATETIME DEFAULT NULL,
         match_end_time DATETIME DEFAULT NULL,
         next_round_time DATETIME DEFAULT NULL,
+        next_match_start_time DATETIME DEFAULT NULL,
+        next_match_end_time DATETIME DEFAULT NULL,
         config_required BOOLEAN DEFAULT FALSE,
         maintenance BOOLEAN DEFAULT FALSE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
@@ -175,6 +177,25 @@ TABLES = [
         content TEXT NOT NULL,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS system_settings (
+        `key` VARCHAR(100) PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS clan_configs (
+        clan_id INT PRIMARY KEY,
+        target_total INT NOT NULL,
+        updated_by INT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS clan_config_items (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        clan_id INT NOT NULL,
+        th_level INT NOT NULL,
+        member_count INT NOT NULL,
+        sort_order INT DEFAULT 0,
+        UNIQUE KEY uk_clan_th_level (clan_id, th_level)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
 ]
 
 
@@ -190,6 +211,8 @@ MIGRATIONS = [
     "ALTER TABLE rounds ADD COLUMN match_start_time DATETIME DEFAULT NULL AFTER closed_at",
     "ALTER TABLE rounds ADD COLUMN match_end_time DATETIME DEFAULT NULL AFTER match_start_time",
     "ALTER TABLE rounds ADD COLUMN next_round_time DATETIME DEFAULT NULL AFTER match_end_time",
+    "ALTER TABLE rounds ADD COLUMN next_match_start_time DATETIME DEFAULT NULL AFTER next_round_time",
+    "ALTER TABLE rounds ADD COLUMN next_match_end_time DATETIME DEFAULT NULL AFTER next_match_start_time",
     "ALTER TABLE rounds ADD COLUMN config_required BOOLEAN DEFAULT FALSE AFTER next_round_time",
     "ALTER TABLE rounds ADD COLUMN maintenance BOOLEAN DEFAULT FALSE AFTER config_required",
 ]

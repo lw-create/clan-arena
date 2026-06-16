@@ -25,8 +25,25 @@ class RoundTimeRequest(BaseModel):
     match_start_time: Optional[str] = None
     match_end_time: Optional[str] = None
     next_round_time: Optional[str] = None
+    next_match_start_time: Optional[str] = None
+    next_match_end_time: Optional[str] = None
     config_required: Optional[bool] = None
     maintenance: Optional[bool] = None
+
+
+class ConfigStatsToggleRequest(BaseModel):
+    enabled: bool
+
+
+class ConfigStatsItem(BaseModel):
+    th_level: int
+    member_count: int
+
+
+class ClanConfigRequest(BaseModel):
+    clan_id: int
+    target_total: int
+    items: list[ConfigStatsItem]
 
 
 @router.get("/clans")
@@ -243,6 +260,12 @@ def update_round_settings(req: RoundTimeRequest, admin=Depends(require_admin)):
             if req.next_round_time is not None:
                 updates.append("next_round_time = %s")
                 params.append(req.next_round_time)
+            if req.next_match_start_time is not None:
+                updates.append("next_match_start_time = ?")
+                params.append(req.next_match_start_time or None)
+            if req.next_match_end_time is not None:
+                updates.append("next_match_end_time = ?")
+                params.append(req.next_match_end_time or None)
             if req.config_required is not None:
                 updates.append("config_required = %s")
                 params.append(1 if req.config_required else 0)
@@ -250,11 +273,18 @@ def update_round_settings(req: RoundTimeRequest, admin=Depends(require_admin)):
                 updates.append("maintenance = %s")
                 params.append(1 if req.maintenance else 0)
 
+            # 校验 next_match 时间段：开始必须早于结束
+            if req.next_match_start_time and req.next_match_end_time:
+                if req.next_match_start_time >= req.next_match_end_time:
+                    raise HTTPException(status_code=400, detail="下一轮匹配开始时间必须早于结束时间")
+
             if not updates:
                 raise HTTPException(status_code=400, detail="没有需要更新的字段")
 
             params.append(current["id"])
             cursor.execute(f"UPDATE rounds SET {', '.join(updates)} WHERE id = %s", params)
+            log_operation(conn, admin["id"], "update_round_settings", "round", current["id"],
+                           detail=f"更新轮次设置：{', '.join(u.split(' = ')[0] for u in updates)}")
 
     return {"message": "轮次设置已更新"}
 
@@ -657,3 +687,101 @@ def round_clan_status(admin=Depends(require_admin)):
         "clan_status": clan_status,
         "inactive_clans": inactive_clans
     }
+
+
+# ========== 配置统计 ==========
+
+@router.get("/settings/config-stats")
+def get_config_stats_setting(admin=Depends(require_admin)):
+    """获取配置统计开关状态（管理员）"""
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT value FROM system_settings WHERE `key` = %s", ("config_stats_enabled",))
+            row = cursor.fetchone()
+    return {"enabled": bool(row and row["value"] == "1")}
+
+
+@router.post("/settings/config-stats")
+def set_config_stats_setting(req: ConfigStatsToggleRequest, admin=Depends(require_admin)):
+    """设置配置统计开关（管理员）"""
+    value = "1" if req.enabled else "0"
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO system_settings (`key`, value, updated_at)
+                VALUES (%s, %s, NOW())
+                ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()
+            """, ("config_stats_enabled", value))
+            log_operation(conn, admin["id"], "toggle_config_stats", detail=f"配置统计开关 {'开启' if req.enabled else '关闭'}")
+    return {"message": f"配置统计已{'开启' if req.enabled else '关闭'}", "enabled": req.enabled}
+
+
+@router.delete("/clan-configs")
+def clear_all_clan_configs(admin=Depends(require_admin)):
+    """清空所有部落配置统计数据（管理员）"""
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) AS cnt FROM clan_configs")
+            cnt = cursor.fetchone()["cnt"]
+            cursor.execute("DELETE FROM clan_config_items")
+            cursor.execute("DELETE FROM clan_configs")
+            log_operation(conn, admin["id"], "clear_clan_configs", detail=f"清空全部配置统计数据（{cnt} 条部落记录）")
+    return {"message": f"已清空 {cnt} 条配置数据"}
+
+
+@router.get("/config-stats/overview")
+def config_stats_overview(admin=Depends(require_admin)):
+    """配置统计总览：按大本营等级聚合"""
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT th_level,
+                       COUNT(DISTINCT clan_id) AS clan_count,
+                       SUM(member_count)       AS total_members,
+                       ROUND(SUM(member_count) * 1.0 / COUNT(DISTINCT clan_id), 2) AS avg_per_clan
+                FROM clan_config_items
+                GROUP BY th_level
+                ORDER BY th_level DESC
+            """)
+            rows = cursor.fetchall()
+    return {"overview": rows}
+
+
+@router.get("/config-stats/clans")
+def config_stats_clans(admin=Depends(require_admin)):
+    """配置统计：部落明细 + 未填部落清单"""
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT cc.clan_id, cc.target_total, cc.updated_at,
+                       c.name AS clan_name, c.code AS clan_code,
+                       u.username AS updated_by_name
+                FROM clan_configs cc
+                JOIN clans c ON cc.clan_id = c.id
+                LEFT JOIN users u ON cc.updated_by = u.id
+                ORDER BY cc.updated_at DESC
+            """)
+            configs = cursor.fetchall()
+
+            for cfg in configs:
+                cursor.execute("""
+                    SELECT th_level, member_count
+                    FROM clan_config_items
+                    WHERE clan_id = %s
+                    ORDER BY th_level DESC
+                """, (cfg["clan_id"],))
+                items = cursor.fetchall()
+                cfg["items"] = items
+                cfg["total_members"] = sum(i["member_count"] for i in items)
+
+            # 未填部落清单
+            cursor.execute("""
+                SELECT c.id, c.name, c.code
+                FROM clans c
+                WHERE c.code NOT LIKE 'UNREG_%%'
+                  AND c.id NOT IN (SELECT clan_id FROM clan_configs)
+                ORDER BY c.name
+            """)
+            missing = cursor.fetchall()
+
+    return {"configs": configs, "missing": missing}

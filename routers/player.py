@@ -432,3 +432,100 @@ def player_unknown_clans(user=Depends(get_current_user)):
             """)
             data = cursor.fetchall()
     return {"unknown_clans": data}
+
+
+# ========== 配置统计（玩家端） ==========
+
+class ConfigItemReq(BaseModel):
+    th_level: int
+    member_count: int
+
+
+class ClanConfigReq(BaseModel):
+    clan_id: int
+    target_total: int
+    items: list[ConfigItemReq]
+
+
+def _config_stats_enabled(cursor) -> bool:
+    cursor.execute("SELECT value FROM system_settings WHERE `key` = %s", ("config_stats_enabled",))
+    row = cursor.fetchone()
+    return bool(row and row["value"] == "1")
+
+
+@router.get("/clan-config")
+def get_my_clan_config(clan_id: int, user=Depends(get_current_user)):
+    """读取本人某绑定部落当前配置（玩家端）"""
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            if not _config_stats_enabled(cursor):
+                raise HTTPException(status_code=403, detail="配置统计当前未开启")
+            cursor.execute("SELECT id FROM user_clan WHERE user_id = %s AND clan_id = %s", (user["id"], clan_id))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=403, detail="您未绑定该部落")
+
+            cursor.execute("SELECT target_total, updated_at FROM clan_configs WHERE clan_id = %s", (clan_id,))
+            cfg = cursor.fetchone()
+            if not cfg:
+                return {"clan_id": clan_id, "target_total": None, "items": [], "updated_at": None}
+
+            cursor.execute("""
+                SELECT th_level, member_count FROM clan_config_items
+                WHERE clan_id = %s ORDER BY th_level DESC
+            """, (clan_id,))
+            items = cursor.fetchall()
+
+    return {"clan_id": clan_id, "target_total": cfg["target_total"], "updated_at": cfg["updated_at"], "items": items}
+
+
+@router.post("/clan-config")
+def save_my_clan_config(req: ClanConfigReq, user=Depends(get_current_user)):
+    """保存某绑定部落的配置（玩家端，覆盖式）"""
+    # 校验：target_total
+    if req.target_total not in (40, 50):
+        raise HTTPException(status_code=400, detail="总人数目标必须为 40 或 50")
+    # 校验：items 非空
+    if not req.items:
+        raise HTTPException(status_code=400, detail="请至少填写一栏配置")
+    # 校验：等级与人数范围 + 等级唯一
+    seen_levels = set()
+    total = 0
+    for it in req.items:
+        if it.th_level < 0 or it.th_level > 100:
+            raise HTTPException(status_code=400, detail=f"大本营等级必须在 0-100 之间（当前：{it.th_level}）")
+        if it.member_count < 0 or it.member_count > 50:
+            raise HTTPException(status_code=400, detail=f"成员数量必须在 0-50 之间（当前：{it.member_count}）")
+        if it.th_level in seen_levels:
+            raise HTTPException(status_code=400, detail=f"大本营等级 {it.th_level} 不能重复出现")
+        seen_levels.add(it.th_level)
+        total += it.member_count
+    if total != req.target_total:
+        raise HTTPException(status_code=400, detail=f"成员数量合计为 {total}，应等于目标 {req.target_total}")
+
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            if not _config_stats_enabled(cursor):
+                raise HTTPException(status_code=403, detail="配置统计当前未开启")
+            cursor.execute("SELECT id FROM user_clan WHERE user_id = %s AND clan_id = %s", (user["id"], req.clan_id))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=403, detail="您未绑定该部落")
+
+            # 覆盖：先删旧明细，再插入新明细
+            cursor.execute("DELETE FROM clan_config_items WHERE clan_id = %s", (req.clan_id,))
+            for idx, it in enumerate(req.items):
+                cursor.execute("""
+                    INSERT INTO clan_config_items (clan_id, th_level, member_count, sort_order)
+                    VALUES (%s, %s, %s, %s)
+                """, (req.clan_id, it.th_level, it.member_count, idx))
+
+            # 写入或更新主记录
+            cursor.execute("""
+                INSERT INTO clan_configs (clan_id, target_total, updated_by, updated_at)
+                VALUES (%s, %s, %s, NOW())
+                ON DUPLICATE KEY UPDATE
+                    target_total = VALUES(target_total),
+                    updated_by = VALUES(updated_by),
+                    updated_at = NOW()
+            """, (req.clan_id, req.target_total, user["id"]))
+
+    return {"message": "配置已保存"}

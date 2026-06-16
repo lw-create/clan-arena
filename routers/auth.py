@@ -101,7 +101,7 @@ def get_me(user=Depends(get_current_user)):
             notifications = cursor.fetchall()
 
             # 当前轮次信息
-            cursor.execute("SELECT id, round_no, status, opened_at, match_start_time, match_end_time, next_round_time, config_required, maintenance FROM rounds WHERE status = 'open' ORDER BY id DESC LIMIT 1")
+            cursor.execute("SELECT id, round_no, status, opened_at, match_start_time, match_end_time, next_round_time, next_match_start_time, next_match_end_time, config_required, maintenance FROM rounds WHERE status = 'open' ORDER BY id DESC LIMIT 1")
             current_round = cursor.fetchone()
 
             # 当前用户在本轮的登记状态
@@ -172,6 +172,11 @@ def get_me(user=Depends(get_current_user)):
             guide_row = cursor.fetchone()
             score_guide = guide_row["content"] if guide_row else ""
 
+            # 配置统计全局开关
+            cursor.execute("SELECT value FROM system_settings WHERE `key` = %s", ("config_stats_enabled",))
+            cs_row = cursor.fetchone()
+            config_stats_enabled = bool(cs_row and cs_row["value"] == "1")
+
     return {
         "id": user["id"],
         "username": user["username"],
@@ -186,6 +191,7 @@ def get_me(user=Depends(get_current_user)):
         "clans": clans,
         "notifications": notifications,
         "score_guide": score_guide,
+        "config_stats_enabled": config_stats_enabled,
     }
 
 
