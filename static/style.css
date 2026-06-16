@@ -379,6 +379,93 @@ th { color: var(--text-muted); font-weight: 600; font-size: 0.78rem; text-transf
     color: #fff;
 }
 .match-result-banner.lose .banner-big-text { color: #fff; }
+.match-result-banner.pending {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #fff;
+}
+.match-result-banner.pending .banner-big-text { color: #fff; }
+.match-result-banner.notice {
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+    color: #fff;
+}
+.match-result-banner.notice .banner-big-text { color: #fff; }
+
+.banner-vs { font-size: 1.2rem; font-weight: 600; margin-bottom: 6px; }
+.banner-vs .vs-tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.25);
+    border-radius: 4px;
+    padding: 1px 8px;
+    margin: 0 6px;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+.banner-score { font-size: 1rem; opacity: 0.9; }
+
+/* 登记状态醒目横幅 */
+#registration-status-banner { margin-bottom: 12px; }
+.reg-banner {
+    border-radius: 12px;
+    padding: 20px 16px;
+    text-align: center;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+.reg-banner__round {
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.75;
+    margin-bottom: 6px;
+}
+.reg-banner__status {
+    font-size: 1.8rem;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+.reg-banner__hint {
+    font-size: 0.9rem;
+    opacity: 0.85;
+}
+.reg-banner--warning {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #fff;
+}
+.reg-banner--registered {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #fff;
+}
+.reg-banner--closed {
+    background: linear-gradient(135deg, #475569, #334155);
+    color: #94a3b8;
+}
+.reg-banner--closed .reg-banner__hint { color: #64748b; }
+
+/* 管理员轮次状态横幅 */
+#admin-round-status-banner { margin-bottom: 12px; }
+.admin-round-banner {
+    border-radius: 12px;
+    padding: 18px 16px;
+    text-align: center;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+.arb__round { font-size: 1.1rem; font-weight: 800; margin-bottom: 4px; }
+.arb__status { font-size: 0.95rem; font-weight: 700; opacity: 0.9; margin-bottom: 4px; }
+.arb__hint { font-size: 0.85rem; opacity: 0.75; }
+.admin-round-banner--open {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #fff;
+}
+.admin-round-banner--closed {
+    background: linear-gradient(135deg, #475569, #334155);
+    color: #94a3b8;
+}
+.admin-round-banner--closed .arb__hint { color: #64748b; }
+.admin-round-banner--empty {
+    background: linear-gradient(135deg, #1e293b, #0f172a);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+}
 
 @media (max-width: 600px) {
     .match-result-banner .banner-big-text {
@@ -386,6 +473,8 @@ th { color: var(--text-muted); font-weight: 600; font-size: 0.78rem; text-transf
         letter-spacing: 2px;
     }
     .match-result-banner .banner-detail { font-size: 1rem; }
+    .banner-vs { font-size: 1rem; }
+    .reg-banner__status { font-size: 1.4rem; }
 }
 
 /* Monitor Tabs */

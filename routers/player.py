@@ -117,10 +117,13 @@ def search_clan(req: SearchClanRequest, user=Depends(get_current_user)):
 def match_registered(req: MatchRegisteredRequest, user=Depends(get_current_user)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            # 检查本轮是否要求必填配置
-            cursor.execute("SELECT config_required FROM rounds WHERE status = 'open' ORDER BY id DESC LIMIT 1")
+            # 检查当前轮次是否开启
+            cursor.execute("SELECT id, round_no, config_required FROM rounds WHERE status = 'open' ORDER BY id DESC LIMIT 1")
             current_round = cursor.fetchone()
-            if current_round and current_round.get("config_required") and not req.config_remark:
+            if not current_round:
+                raise HTTPException(status_code=403, detail="当前轮次未开启或已关闭，无法登记，请联系管理员开启本轮")
+
+            if current_round.get("config_required") and not req.config_remark:
                 raise HTTPException(status_code=400, detail="本轮要求填写对战配置，请先填写配置信息")
 
             cursor.execute("SELECT clan_id FROM user_clan WHERE user_id = %s", (user["id"],))
@@ -219,10 +222,13 @@ def match_registered(req: MatchRegisteredRequest, user=Depends(get_current_user)
 def match_unregistered(req: MatchUnregisteredRequest, user=Depends(get_current_user)):
     with get_db() as conn:
         with conn.cursor() as cursor:
-            # 检查本轮是否要求必填配置
-            cursor.execute("SELECT config_required FROM rounds WHERE status = 'open' ORDER BY id DESC LIMIT 1")
+            # 检查当前轮次是否开启
+            cursor.execute("SELECT id, round_no, config_required FROM rounds WHERE status = 'open' ORDER BY id DESC LIMIT 1")
             current_round = cursor.fetchone()
-            if current_round and current_round.get("config_required") and not req.config_remark:
+            if not current_round:
+                raise HTTPException(status_code=403, detail="当前轮次未开启或已关闭，无法登记，请联系管理员开启本轮")
+
+            if current_round.get("config_required") and not req.config_remark:
                 raise HTTPException(status_code=400, detail="本轮要求填写对战配置，请先填写配置信息")
 
             cursor.execute("SELECT clan_id FROM user_clan WHERE user_id = %s", (user["id"],))

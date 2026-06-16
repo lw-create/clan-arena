@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>部落对战积分系统</title>
-    <link rel="stylesheet" href="/static/style.css?v=13">
+    <link rel="stylesheet" href="/static/style.css?v=14">
 </head>
 <body>
     <div id="app">
@@ -63,6 +63,9 @@
                     <h2>📋 本轮状态</h2>
                     <div id="round-status-content"></div>
                 </div>
+
+                <!-- 登记状态横幅（核心信息区域） -->
+                <div id="registration-status-banner"></div>
 
                 <!-- 通知 -->
                 <div id="notification-area" class="card notification-card">
@@ -217,9 +220,11 @@
 
                 <!-- 轮次管理 -->
                 <div id="tab-rounds" class="tab-content">
+                    <!-- 当前轮次状态横幅 -->
+                    <div id="admin-round-status-banner"></div>
                     <div class="card">
                         <h2>🔄 轮次管理</h2>
-                        <p class="hint-text">开启新一轮后，成员的匹配登记会自动记录。关闭轮次时，系统自动冻结连续3轮未登记的用户。</p>
+                        <p class="hint-text">开启新一轮后，成员的匹配登记会自动记录。关闭轮次时，系统自动冻结连续未登记的用户。</p>
                         <div id="round-actions" style="margin-bottom:14px">
                             <button class="btn btn-primary" onclick="openRound()">开启新一轮</button>
                             <button class="btn btn-danger" onclick="closeRound()">关闭当前轮</button>
@@ -420,6 +425,6 @@
 
     </div>
 
-    <script src="/static/app.js?v=20"></script>
+    <script src="/static/app.js?v=21"></script>
 </body>
 </html>

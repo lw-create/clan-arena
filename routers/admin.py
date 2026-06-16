@@ -332,7 +332,92 @@ def list_rounds(admin=Depends(require_admin)):
     return {"rounds": rounds}
 
 
-# ========== 数据备份 ==========
+# ========== 管理员撤销本轮对战登记 ==========
+
+@router.delete("/match/{match_id}/cancel")
+def admin_cancel_match(match_id: int, admin=Depends(require_admin)):
+    """
+    管理员撤销本轮对战登记（仅当前进行中的轮次）
+    - 恢复双方积分（已登记对战）
+    - 删除匹配记录
+    - 删除轮次登记记录
+    """
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM matches WHERE id = %s", (match_id,))
+            match = cursor.fetchone()
+            if not match:
+                raise HTTPException(status_code=404, detail="匹配记录不存在")
+
+            # 获取当前进行中的轮次
+            cursor.execute("SELECT id, round_no FROM rounds WHERE status = 'open' ORDER BY id DESC LIMIT 1")
+            current_round = cursor.fetchone()
+
+            if not current_round:
+                raise HTTPException(status_code=403, detail="当前无进行中的轮次，无法撤销")
+
+            # 验证该匹配属于本轮
+            cursor.execute("SELECT opened_at FROM rounds WHERE id = %s", (current_round["id"],))
+            round_info = cursor.fetchone()
+            if round_info and match["matched_at"] < round_info["opened_at"]:
+                raise HTTPException(status_code=403, detail="只能撤销当前轮次的对战记录")
+
+            is_registered = bool(match["is_registered"])
+
+            # 恢复积分（仅已登记对战）
+            if is_registered and match["winner_id"] and match["loser_id"]:
+                cursor.execute("UPDATE clans SET score = score - 1 WHERE id = %s", (match["winner_id"],))
+                cursor.execute("UPDATE clans SET score = score + 1 WHERE id = %s", (match["loser_id"],))
+
+                # 获取部落名称用于日志
+                cursor.execute("SELECT name FROM clans WHERE id = %s", (match["winner_id"],))
+                winner_name = cursor.fetchone()["name"]
+                cursor.execute("SELECT name FROM clans WHERE id = %s", (match["loser_id"],))
+                loser_name = cursor.fetchone()["name"]
+            else:
+                winner_name = loser_name = None
+
+            # 清理临时部落（未登记对战）
+            for cid in [match["clan_a_id"], match["clan_b_id"]]:
+                if cid:
+                    cursor.execute("SELECT code FROM clans WHERE id = %s", (cid,))
+                    row = cursor.fetchone()
+                    if row and row["code"].startswith("UNREG_"):
+                        cursor.execute("DELETE FROM clans WHERE id = %s", (cid,))
+
+            # 删除轮次登记记录
+            cursor.execute(
+                "DELETE FROM round_registrations WHERE round_id = %s AND clan_id IN (%s, %s)",
+                (current_round["id"], match["clan_a_id"], match["clan_b_id"])
+            )
+
+            # 删除匹配记录
+            cursor.execute("DELETE FROM matches WHERE id = %s", (match_id,))
+
+            # 写日志
+            clan_a_name = clan_b_name = ""
+            cursor.execute("SELECT name FROM clans WHERE id = %s", (match["clan_a_id"],))
+            r = cursor.fetchone()
+            if r: clan_a_name = r["name"]
+            cursor.execute("SELECT name FROM clans WHERE id = %s", (match["clan_b_id"],))
+            r = cursor.fetchone()
+            if r: clan_b_name = r["name"]
+
+            score_info = ""
+            if is_registered and winner_name:
+                score_info = f"，积分已恢复（胜方 {winner_name} -1，负方 {loser_name} +1）"
+
+            log_operation(conn, admin["id"], "cancel_match",
+                          detail=f"第{current_round['round_no']}轮撤销对战 {clan_a_name} vs {clan_b_name}{score_info}")
+
+    return {
+        "message": f"第{current_round['round_no']}轮对战已撤销，积分已恢复",
+        "round_no": current_round["round_no"],
+        "is_registered": is_registered
+    }
+
+
+# ========== 轮次列表 ==========
 
 BACKUP_TABLES = [
     "users", "clans", "user_clan", "matches",

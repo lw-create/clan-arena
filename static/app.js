@@ -124,19 +124,29 @@ async function loadPlayerData() {
     const matchCard = document.getElementById('match-card');
     const matchDone = document.getElementById('match-done');
     const resultBanner = document.getElementById('match-result-banner');
+    const regBanner = document.getElementById('registration-status-banner');
     if (data.has_active_match && data.active_match_info) {
         matchCard.style.display = 'none';
-        matchDone.style.display = '';
-        matchDone.innerHTML = `<div class="match-done-info">✅ 本轮部落战已完成登记！<br>对手：<strong>${escapeHTML(data.active_match_info.opponent_name)}</strong><br><span style="font-size:0.82rem;color:var(--text-muted)">如需撤销，请在下方对战记录中操作（每轮仅限一次）</span></div>`;
+        matchDone.style.display = 'none';
+        resultBanner.style.display = '';
         // 根据 result 显示大横幅
         const result = data.active_match_info.result;
         if (result === 'win') {
             resultBanner.className = 'match-result-banner win';
-            resultBanner.innerHTML = `<div class="banner-big-text">✌ 胜利！</div><div class="banner-detail">${escapeHTML(data.active_match_info.my_clan_name)} vs ${escapeHTML(data.active_match_info.opponent_name)}<br>恭喜，积分 +1</div>`;
-            resultBanner.style.display = '';
+            resultBanner.innerHTML = `
+                <div class="banner-big-text">✌ 胜利！</div>
+                <div class="banner-detail">
+                    <div class="banner-vs">${escapeHTML(data.active_match_info.my_clan_name)} <span class="vs-tag">VS</span> ${escapeHTML(data.active_match_info.opponent_name)}</div>
+                    <div class="banner-score">恭喜，积分 +1</div>
+                </div>`;
         } else if (result === 'lose') {
             resultBanner.className = 'match-result-banner lose';
-            resultBanner.innerHTML = `<div class="banner-big-text">✗ 失败</div><div class="banner-detail">${escapeHTML(data.active_match_info.my_clan_name)} vs ${escapeHTML(data.active_match_info.opponent_name)}<br>积分 -1，再接再厉！</div>`;
+            resultBanner.innerHTML = `
+                <div class="banner-big-text">✗ 失败</div>
+                <div class="banner-detail">
+                    <div class="banner-vs">${escapeHTML(data.active_match_info.my_clan_name)} <span class="vs-tag">VS</span> ${escapeHTML(data.active_match_info.opponent_name)}</div>
+                    <div class="banner-score">积分 -1，再接再厉！</div>
+                </div>`;
             resultBanner.style.display = '';
         } else if (result === 'pending') {
             // 匹配到其他联盟 → 待定
@@ -225,18 +235,47 @@ function switchClan(clanId) {
 }
 
 function renderRoundStatus(currentRound, myRegistration) {
-    const el = document.getElementById('round-status-content');
+    const statusEl = document.getElementById('round-status-content');
+    const bannerEl = document.getElementById('registration-status-banner');
+
     if (!currentRound) {
-        el.innerHTML = `<div class="round-status-none">📋 当前暂无进行中的轮次，请联系管理员开启本轮。</div>`;
+        statusEl.innerHTML = `<div class="round-status-none">📋 当前暂无进行中的轮次，请联系管理员开启本轮。</div>`;
+        bannerEl.innerHTML = '';
         return;
     }
+
     const roundNo = currentRound.round_no;
+    const isOpen = currentRound.status === 'open';
     const registered = myRegistration && myRegistration.registered;
+
+    // 轮次状态小字（原有卡片内信息）
     if (registered) {
         const t = myRegistration.registered_at ? formatDate(myRegistration.registered_at) : '';
-        el.innerHTML = `<div class="round-status-done">✅ 第${roundNo}轮已登记 ${t ? '（登记于 ' + t + '）' : ''}</div>`;
+        statusEl.innerHTML = `<div class="round-status-done">✅ 第${roundNo}轮已登记 ${t ? '（' + t + '）' : ''}</div>`;
     } else {
-        el.innerHTML = `<div class="round-status-pending">⚠️ 第${roundNo}轮尚未登记，请搜索对手完成登记！<br><span style="font-size:0.82rem;color:var(--text-muted)">使用下方搜索功能，找到对手后点击"登记对战"即可。</span></div>`;
+        statusEl.innerHTML = `<div class="round-status-pending">⚠️ 第${roundNo}轮尚未登记，请搜索对手完成登记！</div>`;
+    }
+
+    // 醒目横幅（新增大横幅区域）
+    if (registered) {
+        // 已登记 → 横幅由 loadPlayerData 的 has_active_match 分支处理，此处不再重复
+        bannerEl.innerHTML = '';
+    } else if (isOpen) {
+        // 未登记 + 轮次开启中 → 醒目提示
+        bannerEl.innerHTML = `
+            <div class="reg-banner reg-banner--warning">
+                <div class="reg-banner__round">第 ${roundNo} 轮部落战</div>
+                <div class="reg-banner__status">⚠️ 您还未进行登记</div>
+                <div class="reg-banner__hint">⚡ 请在本轮结束之前完成登记！</div>
+            </div>`;
+    } else {
+        // 轮次已关闭
+        bannerEl.innerHTML = `
+            <div class="reg-banner reg-banner--closed">
+                <div class="reg-banner__round">第 ${roundNo} 轮部落战</div>
+                <div class="reg-banner__status">🔒 本轮已关闭</div>
+                <div class="reg-banner__hint">本轮登记已截止，请等待下一轮开启</div>
+            </div>`;
     }
 }
 
@@ -471,23 +510,36 @@ function showMatchResult(data) {
         const iWin = data.winner.name === myClanName;
         if (iWin) {
             banner.className = 'match-result-banner win';
-            banner.innerHTML = `<div class="banner-big-text">✌ 胜利！</div><div class="banner-detail">${escapeHTML(myClanName)} vs ${escapeHTML(opponentName)}<br>恭喜，积分 +1（当前：${data.winner.score}）</div>`;
+            banner.innerHTML = `
+                <div class="banner-big-text">✌ 胜利！</div>
+                <div class="banner-detail">
+                    <div class="banner-vs">${escapeHTML(myClanName)} <span class="vs-tag">VS</span> ${escapeHTML(opponentName)}</div>
+                    <div class="banner-score">恭喜，积分 +1（当前：${data.winner.score}）</div>
+                </div>`;
         } else {
             banner.className = 'match-result-banner lose';
-            banner.innerHTML = `<div class="banner-big-text">✗ 失败</div><div class="banner-detail">${escapeHTML(myClanName)} vs ${escapeHTML(opponentName)}<br>积分 -1，再接再厉（当前：${data.loser.score}）</div>`;
+            banner.innerHTML = `
+                <div class="banner-big-text">✗ 失败</div>
+                <div class="banner-detail">
+                    <div class="banner-vs">${escapeHTML(myClanName)} <span class="vs-tag">VS</span> ${escapeHTML(opponentName)}</div>
+                    <div class="banner-score">积分 -1，再接再厉（当前：${data.loser.score}）</div>
+                </div>`;
         }
         banner.style.display = '';
         matchCard.style.display = 'none';
-        matchDone.style.display = '';
-        matchDone.innerHTML = `<div class="match-done-info">✅ 对战已登记完成！<br>对手：<strong>${escapeHTML(opponentName)}</strong></div>`;
+        matchDone.style.display = 'none';
     } else {
         const opponentName = data.loser.name || '对方部落';
-        banner.className = 'match-result-banner lose';
-        banner.innerHTML = `<div class="banner-big-text">✗ 失败</div><div class="banner-detail">${escapeHTML(myClanName)} vs ${escapeHTML(opponentName)}<br>对方未登记，默认判输，积分 -1（当前：${data.loser.score}）</div>`;
+        banner.className = 'match-result-banner pending';
+        banner.innerHTML = `
+            <div class="banner-big-text">⏳ 待定</div>
+            <div class="banner-detail">
+                <div class="banner-vs">${escapeHTML(myClanName)} <span class="vs-tag">VS</span> ${escapeHTML(opponentName)}</div>
+                <div class="banner-score">对方未登记，积分保持不变（当前：${data.loser.score}）</div>
+            </div>`;
         banner.style.display = '';
         matchCard.style.display = 'none';
-        matchDone.style.display = '';
-        matchDone.innerHTML = `<div class="match-done-info">⚠️ 对战已提交（对方未登记）<br>对手：<strong>${escapeHTML(opponentName)}</strong></div>`;
+        matchDone.style.display = 'none';
     }
     document.getElementById('search-keyword').value = '';
     document.getElementById('search-results').innerHTML = '';
@@ -515,18 +567,43 @@ async function loadPlayerDataLight() {
         const matchDone = document.getElementById('match-done');
         const matchCard = document.getElementById('match-card');
         const resultBanner = document.getElementById('match-result-banner');
+        const regBanner = document.getElementById('registration-status-banner');
         if (data.has_active_match && data.active_match_info) {
             matchCard.style.display = 'none';
-            matchDone.style.display = '';
-            matchDone.innerHTML = `<div class="match-done-info">✅ 本轮部落战已完成登记！<br>对手：<strong>${escapeHTML(data.active_match_info.opponent_name)}</strong></div>`;
+            matchDone.style.display = 'none';
+            resultBanner.style.display = '';
             if (data.active_match_info.result === 'win') {
                 resultBanner.className = 'match-result-banner win';
-                resultBanner.innerHTML = `<div class="banner-big-text">✌ 胜利！</div><div class="banner-detail">${escapeHTML(data.active_match_info.my_clan_name)} vs ${escapeHTML(data.active_match_info.opponent_name)}<br>恭喜，积分 +1</div>`;
-                resultBanner.style.display = '';
-            } else {
+                resultBanner.innerHTML = `
+                    <div class="banner-big-text">✌ 胜利！</div>
+                    <div class="banner-detail">
+                        <div class="banner-vs">${escapeHTML(data.active_match_info.my_clan_name)} <span class="vs-tag">VS</span> ${escapeHTML(data.active_match_info.opponent_name)}</div>
+                        <div class="banner-score">恭喜，积分 +1</div>
+                    </div>`;
+            } else if (data.active_match_info.result === 'lose') {
                 resultBanner.className = 'match-result-banner lose';
-                resultBanner.innerHTML = `<div class="banner-big-text">✗ 失败</div><div class="banner-detail">${escapeHTML(data.active_match_info.my_clan_name)} vs ${escapeHTML(data.active_match_info.opponent_name)}<br>积分 -1，再接再厉！</div>`;
-                resultBanner.style.display = '';
+                resultBanner.innerHTML = `
+                    <div class="banner-big-text">✗ 失败</div>
+                    <div class="banner-detail">
+                        <div class="banner-vs">${escapeHTML(data.active_match_info.my_clan_name)} <span class="vs-tag">VS</span> ${escapeHTML(data.active_match_info.opponent_name)}</div>
+                        <div class="banner-score">积分 -1，再接再厉！</div>
+                    </div>`;
+            } else if (data.active_match_info.result === 'pending') {
+                resultBanner.className = 'match-result-banner pending';
+                resultBanner.innerHTML = `
+                    <div class="banner-big-text">⏳ 待定</div>
+                    <div class="banner-detail">
+                        <div class="banner-vs">${escapeHTML(data.active_match_info.my_clan_name)} <span class="vs-tag">VS</span> ${escapeHTML(data.active_match_info.opponent_name)}</div>
+                        <div class="banner-score">匹配到其他联盟，积分保持不变，请等待管理员判定</div>
+                    </div>`;
+            } else {
+                resultBanner.className = 'match-result-banner notice';
+                resultBanner.innerHTML = `
+                    <div class="banner-big-text">📢 以部落管理通知为准</div>
+                    <div class="banner-detail">
+                        <div class="banner-vs">${escapeHTML(data.active_match_info.my_clan_name)} <span class="vs-tag">VS</span> ${escapeHTML(data.active_match_info.opponent_name)}</div>
+                        <div class="banner-score">积分保持不变，最终结果以管理员通知为准</div>
+                    </div>`;
             }
         } else {
             matchCard.style.display = '';
@@ -755,14 +832,24 @@ async function loadAllMatches() {
     const data = await api('GET', '/admin/matches');
     const el = document.getElementById('all-matches');
     if (!data.matches || data.matches.length === 0) { el.innerHTML = '<p class="empty-text">暂无对战记录</p>'; return; }
-    let html = '<div class="table-wrapper"><table><tr><th>轮次</th><th>时间</th><th>对战</th><th>胜方</th><th>赛前积分</th><th>状态</th></tr>';
+    let html = '<div class="table-wrapper"><table><tr><th>轮次</th><th>时间</th><th>对战</th><th>胜方</th><th>赛前积分</th><th>状态</th><th>操作</th></tr>';
     data.matches.forEach(m => {
         const reg = m.is_registered ? '已登记' : '<span class="score-negative">未登记</span>';
         const roundLabel = formatRoundNo(m);
-        html += `<tr><td>${roundLabel}</td><td>${formatDate(m.matched_at)}</td><td>${escapeHTML(m.clan_a_name)} vs ${escapeHTML(m.clan_b_name)}</td><td class="score-positive">${escapeHTML(m.winner_name)}</td><td>${m.score_before_a} / ${m.score_before_b}</td><td>${reg}</td></tr>`;
+        const canAdminCancel = m.is_current_round ? `<button class="btn btn-sm btn-danger" onclick="cancelMatchAdmin(${m.id}, '${escapeAttr(m.clan_a_name)}', '${escapeAttr(m.clan_b_name)}')">撤销</button>` : '';
+        html += `<tr><td>${roundLabel}</td><td>${formatDate(m.matched_at)}</td><td>${escapeHTML(m.clan_a_name)} vs ${escapeHTML(m.clan_b_name)}</td><td class="score-positive">${escapeHTML(m.winner_name) || '-'}</td><td>${m.score_before_a} / ${m.score_before_b}</td><td>${reg}</td><td>${canAdminCancel}</td></tr>`;
     });
     html += '</table></div>';
     el.innerHTML = html;
+}
+
+async function cancelMatchAdmin(matchId, clanA, clanB) {
+    if (!await customConfirm(`确定撤销该对战记录？\n\n${clanA} vs ${clanB}\n\n积分将恢复原值。`, '撤销登记')) return;
+    try {
+        const data = await api('DELETE', `/admin/match/${matchId}/cancel`);
+        alert(data.message);
+        await Promise.all([loadAllMatches(), loadClanList()]);
+    } catch {}
 }
 
 async function loadMatchStats() {
@@ -896,6 +983,36 @@ async function loadRounds() {
     try {
         const data = await api('GET', '/admin/round/list');
         const el = document.getElementById('round-list');
+        const bannerEl = document.getElementById('admin-round-status-banner');
+
+        // 管理员轮次状态横幅
+        const openRound = data.rounds ? data.rounds.find(r => r.status === 'open') : null;
+        if (openRound) {
+            bannerEl.innerHTML = `
+                <div class="admin-round-banner admin-round-banner--open">
+                    <div class="arb__round">🔄 第 ${openRound.round_no} 轮部落战</div>
+                    <div class="arb__status">状态：进行中（开启中）</div>
+                    <div class="arb__hint">⚡ 成员可以登记，请管理好本轮对战匹配</div>
+                </div>`;
+        } else {
+            const closedRound = data.rounds && data.rounds.length > 0 ? data.rounds[0] : null;
+            if (closedRound) {
+                bannerEl.innerHTML = `
+                    <div class="admin-round-banner admin-round-banner--closed">
+                        <div class="arb__round">🏁 第 ${closedRound.round_no} 轮部落战</div>
+                        <div class="arb__status">状态：已关闭</div>
+                        <div class="arb__hint">当前无进行中的轮次，请点击「开启新一轮」开始下一轮</div>
+                    </div>`;
+            } else {
+                bannerEl.innerHTML = `
+                    <div class="admin-round-banner admin-round-banner--empty">
+                        <div class="arb__round">📋 暂无轮次记录</div>
+                        <div class="arb__status">系统尚未开启任何轮次</div>
+                        <div class="arb__hint">点击「开启新一轮」开始第一轮部落战</div>
+                    </div>`;
+            }
+        }
+
         if (!data.rounds || data.rounds.length === 0) {
             el.innerHTML = '<p class="empty-text">暂无轮次记录</p>';
             return;
@@ -919,7 +1036,6 @@ async function loadRounds() {
         html += '</table></div>';
         el.innerHTML = html;
 
-        const openRound = data.rounds.find(r => r.status === 'open');
         if (openRound) {
             if (openRound.match_start_time) {
                 document.getElementById('round-start-time').value = toLocalDatetime(openRound.match_start_time);
