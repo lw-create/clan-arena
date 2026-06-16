@@ -58,7 +58,7 @@ def _do_simulate() -> dict:
 
 
 def _clear_data():
-    """清空模拟相关表（保留 admin/monitor 账号）"""
+    """清空模拟相关表（确保 admin/monitor 账号存在且密码正确）"""
     with get_db() as conn:
         with conn.cursor() as c:
             for table in ['operation_logs', 'round_registrations', 'matches',
@@ -67,31 +67,41 @@ def _clear_data():
                     c.execute(f"DELETE FROM {table}")
                 except Exception:
                     pass
+
+            # 确保 admin 和 monitor 用户存在且密码正确
+            c.execute("SELECT id FROM users WHERE username='admin'")
+            admin_row = c.fetchone()
+            if admin_row:
+                c.execute("UPDATE users SET password_hash=%s, plain_password=%s, role='admin', is_super_admin=1, status='active', must_change_pwd=0 WHERE username='admin'",
+                          (_hash_pwd('admin123'), 'admin123'))
+            else:
+                c.execute("INSERT INTO users (username, password_hash, plain_password, role, is_super_admin, status, must_change_pwd) VALUES (%s,%s,%s,'admin',1,'active',0)",
+                          ('admin', _hash_pwd('admin123'), 'admin123'))
+
+            c.execute("SELECT id FROM users WHERE username='monitor'")
+            monitor_row = c.fetchone()
+            if monitor_row:
+                c.execute("UPDATE users SET password_hash=%s, plain_password=%s, role='monitor', status='active', must_change_pwd=0 WHERE username='monitor'",
+                          (_hash_pwd('monitor123'), 'monitor123'))
+            else:
+                c.execute("INSERT INTO users (username, password_hash, plain_password, role, status, must_change_pwd) VALUES (%s,%s,%s,'monitor','active',0)",
+                          ('monitor', _hash_pwd('monitor123'), 'monitor123'))
+
+            # 删除其他用户
             try:
                 c.execute("DELETE FROM users WHERE username NOT IN ('admin', 'monitor')")
             except Exception:
                 pass
-    _log("🧹 数据库已重置（保留 admin/monitor）")
+    _log("🧹 数据库已重置（admin/monitor 密码已重置）")
 
 
 def _create_users() -> tuple:
-    """创建 admin + 10 玩家 + 绑定部落"""
+    """创建 10 玩家 + 绑定部落（admin 已在 _clear_data 中处理）"""
     with get_db() as conn:
         with conn.cursor() as c:
-            # 超管 - 确保 admin/admin123 可登录
+            # 获取 admin_id
             c.execute("SELECT id FROM users WHERE username='admin'")
-            row = c.fetchone()
-            if row:
-                admin_id = row['id']
-                # 更新密码为 admin123，确保能登录
-                c.execute("UPDATE users SET password_hash=%s, plain_password=%s, is_super_admin=1, role='admin', must_change_pwd=0, status='active' WHERE id=%s",
-                          (_hash_pwd('admin123'), 'admin123', admin_id))
-            else:
-                c.execute(
-                    "INSERT INTO users (username, password_hash, plain_password, role, is_super_admin, must_change_pwd) "
-                    "VALUES (%s, %s, %s, 'admin', 1, 0)",
-                    ('admin', _hash_pwd('admin123'), 'admin123'))
-                admin_id = c.lastrowid
+            admin_id = c.fetchone()['id']
 
             # admin 的部落
             c.execute("SELECT id FROM clans WHERE code='ADMIN001'")
