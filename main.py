@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 
 from database import init_db, get_db
 from auth import hash_password
-from routers import auth as auth_router, player, admin as admin_router, monitor
+from routers import auth as auth_router, player, admin as admin_router, monitor, simulate
 
 app = FastAPI(title="部落对战积分系统", version="4.0")
 
@@ -14,6 +14,7 @@ app.include_router(auth_router.router)
 app.include_router(player.router)
 app.include_router(admin_router.router)
 app.include_router(monitor.router)
+app.include_router(simulate.router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
