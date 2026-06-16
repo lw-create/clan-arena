@@ -78,12 +78,14 @@ def _create_users() -> tuple:
     """创建 admin + 10 玩家 + 绑定部落"""
     with get_db() as conn:
         with conn.cursor() as c:
-            # 超管
+            # 超管 - 确保 admin/admin123 可登录
             c.execute("SELECT id FROM users WHERE username='admin'")
             row = c.fetchone()
             if row:
                 admin_id = row['id']
-                c.execute("UPDATE users SET is_super_admin=1, role='admin', must_change_pwd=0 WHERE id=%s", (admin_id,))
+                # 更新密码为 admin123，确保能登录
+                c.execute("UPDATE users SET password_hash=%s, plain_password=%s, is_super_admin=1, role='admin', must_change_pwd=0, status='active' WHERE id=%s",
+                          (_hash_pwd('admin123'), 'admin123', admin_id))
             else:
                 c.execute(
                     "INSERT INTO users (username, password_hash, plain_password, role, is_super_admin, must_change_pwd) "
@@ -256,9 +258,13 @@ def _do_round(admin_id: int, players: list, round_no: int) -> dict:
             summary["unregistered_count"] += 1
             _log(f"    📢 第{round_no}轮未登记-管理通知 [{p10['clan_name']}]")
 
-            # 关闭轮次
-            c.execute("UPDATE rounds SET status='closed', closed_by=%s, closed_at=NOW() WHERE id=%s",
-                      (admin_id, round_id))
+            # 只关闭第1轮，第2轮保持 open 状态让用户能看到当前轮次
+            if round_no == 1:
+                c.execute("UPDATE rounds SET status='closed', closed_by=%s, closed_at=NOW() WHERE id=%s",
+                          (admin_id, round_id))
+                _log(f"    🏁 第{round_no}轮已关闭")
+            else:
+                _log(f"    🔄 第{round_no}轮保持开启状态（用户可继续登记）")
 
     return summary
 
