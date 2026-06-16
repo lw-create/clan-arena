@@ -27,6 +27,12 @@ def hash_pwd(pwd):
     return bcrypt.hashpw(pwd.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
+# 默认密码常量
+DEFAULT_ADMIN_PASSWORD = "admin123456"
+DEFAULT_MONITOR_PASSWORD = "monitor123456"
+DEFAULT_PLAYER_PASSWORD = "123456"
+
+
 def clear_db():
     """清空已有模拟数据（保留 admin/monitor 账号）"""
     with get_db() as conn:
@@ -45,7 +51,7 @@ def clear_db():
 
 
 def create_users():
-    """创建 admin + 10 个玩家 + 绑定部落"""
+    """创建 admin + monitor + 10 个玩家 + 绑定部落"""
     with get_db() as conn:
         with conn.cursor() as c:
             # 1. 确保超管 admin 存在
@@ -53,16 +59,32 @@ def create_users():
             row = c.fetchone()
             if row:
                 admin_id = row['id']
-                c.execute("UPDATE users SET is_super_admin=1, role='admin', must_change_pwd=0 WHERE id=%s", (admin_id,))
+                c.execute("UPDATE users SET is_super_admin=1, role='admin', must_change_pwd=0, password_hash=%s, plain_password=%s WHERE id=%s",
+                          (hash_pwd(DEFAULT_ADMIN_PASSWORD), DEFAULT_ADMIN_PASSWORD, admin_id))
             else:
                 c.execute(
                     "INSERT INTO users (username, password_hash, plain_password, role, is_super_admin, must_change_pwd) "
                     "VALUES (%s, %s, %s, 'admin', 1, 0)",
-                    ('admin', hash_pwd('admin123'), 'admin123'))
+                    ('admin', hash_pwd(DEFAULT_ADMIN_PASSWORD), DEFAULT_ADMIN_PASSWORD))
                 admin_id = c.lastrowid
             print(f"👑 超管 admin (ID={admin_id})")
 
-            # 2. 为 admin 绑定管理部落
+            # 2. 确保 monitor 监察员存在
+            c.execute("SELECT id FROM users WHERE username='monitor'")
+            row = c.fetchone()
+            if row:
+                monitor_id = row['id']
+                c.execute("UPDATE users SET role='monitor', must_change_pwd=0, password_hash=%s, plain_password=%s WHERE id=%s",
+                          (hash_pwd(DEFAULT_MONITOR_PASSWORD), DEFAULT_MONITOR_PASSWORD, monitor_id))
+            else:
+                c.execute(
+                    "INSERT INTO users (username, password_hash, plain_password, role, must_change_pwd) "
+                    "VALUES (%s, %s, %s, 'monitor', 0)",
+                    ('monitor', hash_pwd(DEFAULT_MONITOR_PASSWORD), DEFAULT_MONITOR_PASSWORD))
+                monitor_id = c.lastrowid
+            print(f"🛡️  监察员 monitor (ID={monitor_id})")
+
+            # 3. 为 admin 绑定管理部落
             c.execute("SELECT id FROM clans WHERE code='ADMIN001'")
             row = c.fetchone()
             if row:
@@ -77,13 +99,13 @@ def create_users():
             except Exception:
                 pass
 
-            # 3. 创建 10 个玩家 + 绑定部落
+            # 4. 创建 10 个玩家 + 绑定部落
             player_names = ['阿强', '小美', '大勇', '小花', '阿龙',
                             '小倩', '小胖', '小芳', '阿伟', '小燕']
             players = []
             for i, name in enumerate(player_names):
                 username = f"player{i+1:02d}"
-                password = "123456"
+                password = DEFAULT_PLAYER_PASSWORD
                 clan_name = f"部落{name}"
                 clan_code = f"CL{i+1:03d}"
                 initial_score = random.randint(10, 19)
@@ -347,9 +369,10 @@ def report(players):
 
             # 登录账号提示
             print(f"\n🔐 测试账号:")
-            print(f"   👑 管理员: admin / admin123 (super admin)")
-            print(f"   🎮 玩家: player01 ~ player10，密码均为: 123456")
-            print(f"   例: player01 (阿强) / 123456")
+            print(f"   👑 管理员: admin / {DEFAULT_ADMIN_PASSWORD} (super admin)")
+            print(f"   🛡️  监察员: monitor / {DEFAULT_MONITOR_PASSWORD}")
+            print(f"   🎮 玩家: player01 ~ player10，密码均为: {DEFAULT_PLAYER_PASSWORD}")
+            print(f"   例: player01 (阿强) / {DEFAULT_PLAYER_PASSWORD}")
 
             print(f"\n📁 数据库: {db_name} @ {db_host}")
             print(f"   （数据已写入应用数据库，登录即可查看）")
