@@ -5,17 +5,18 @@
 """
 import os
 import random
-import bcrypt
 
 from fastapi import APIRouter, HTTPException
 
 from database import get_db, init_db
+from auth import hash_password  # 使用统一的密码哈希函数
 
 router = APIRouter(prefix="/api/simulate", tags=["模拟"])
 
 
 def _hash_pwd(pwd: str) -> str:
-    return bcrypt.hashpw(pwd.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    """使用auth.py中的hash_password确保哈希方式一致"""
+    return hash_password(pwd)
 
 
 def _log(msg: str):
