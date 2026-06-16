@@ -3,6 +3,7 @@ import ssl
 from contextlib import contextmanager
 
 import pymysql
+from dbutils.pooled_db import PooledDB
 
 
 def _env(name, default=""):
@@ -25,6 +26,24 @@ def _config():
     if _env("DB_SSL").lower() in {"1", "true", "yes"} or "tidbcloud.com" in cfg["host"]:
         cfg["ssl"] = ssl.create_default_context()
     return cfg
+
+
+_pool_config = _config()
+_pool = None
+
+
+def _get_pool():
+    global _pool
+    if _pool is None:
+        _pool = PooledDB(
+            creator=pymysql,
+            maxconnections=20,
+            mincached=5,
+            maxcached=10,
+            maxusage=1000,
+            **_pool_config
+        )
+    return _pool
 
 
 class CompatCursor:
@@ -63,7 +82,7 @@ class CompatConn:
 
 
 def get_connection():
-    return CompatConn(pymysql.connect(**_config()))
+    return CompatConn(_get_pool().connection())
 
 
 @contextmanager

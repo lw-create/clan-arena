@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from pydantic import BaseModel
 from datetime import datetime
 from database import get_db
 from auth import (
     verify_password, create_access_token, get_current_user,
-    require_admin, require_super_admin, hash_password
+    require_admin, require_super_admin, hash_password,
+    _check_login_rate, _record_failed_login, _clear_login_attempts
 )
 
 router = APIRouter(prefix="/api", tags=["认证"])
@@ -48,9 +49,12 @@ def log_operation(db, admin_id: int, action: str, target_type: str = None,
 
 
 @router.post("/login")
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
     username = req.username.strip()
     password = req.password.strip()
+    
+    _check_login_rate(request, username)
+    
     with get_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
@@ -64,6 +68,7 @@ def login(req: LoginRequest):
                     raise HTTPException(status_code=503, detail="系统维护中，请稍后登录")
 
     if not user or not verify_password(password, user["password_hash"]):
+        _record_failed_login(request, username)
         raise HTTPException(status_code=401, detail="用户名或密码错误")
 
     if user["status"] == "frozen":
@@ -71,6 +76,7 @@ def login(req: LoginRequest):
     if user["status"] == "disabled":
         raise HTTPException(status_code=403, detail="账号已被禁用")
 
+    _clear_login_attempts(username)
     token = create_access_token({"sub": str(user["id"]), "role": user["role"]})
     return {
         "token": token,
@@ -220,8 +226,8 @@ def change_password(req: ChangePasswordRequest, user=Depends(get_current_user)):
     with get_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "UPDATE users SET password_hash = %s, plain_password = %s, must_change_pwd = 0 WHERE id = %s",
-                (password_hash, req.new_password, user["id"])
+                "UPDATE users SET password_hash = %s, plain_password = '', must_change_pwd = 0 WHERE id = %s",
+                (password_hash, user["id"])
             )
     return {"message": "密码修改成功"}
 
@@ -265,8 +271,8 @@ def create_user(req: CreateUserRequest, admin=Depends(require_admin)):
         with get_db() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO users (username, password_hash, plain_password, role, must_change_pwd) VALUES (%s, %s, %s, %s, 1)",
-                    (req.username, password_hash, req.password, req.role)
+                    "INSERT INTO users (username, password_hash, role, must_change_pwd) VALUES (%s, %s, %s, 1)",
+                    (req.username, password_hash, req.role)
                 )
                 user_id = cursor.lastrowid
     except Exception as e:
@@ -387,8 +393,8 @@ def reset_user_password(user_id: int, admin=Depends(require_admin)):
             new_password = "000000"
             password_hash = hash_password(new_password)
             cursor.execute(
-                "UPDATE users SET password_hash = %s, plain_password = %s, must_change_pwd = 1 WHERE id = %s",
-                (password_hash, new_password, user_id)
+                "UPDATE users SET password_hash = %s, plain_password = '', must_change_pwd = 1 WHERE id = %s",
+                (password_hash, user_id)
             )
             if cursor.rowcount == 0:
                 raise HTTPException(status_code=404, detail="用户不存在")

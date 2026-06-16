@@ -6,21 +6,19 @@
 import os
 import random
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Depends
 
 from database import get_db, init_db
-from auth import hash_password  # 使用统一的密码哈希函数
+from auth import hash_password, require_admin
 
 router = APIRouter(prefix="/api/simulate", tags=["模拟"])
 
-# 默认密码常量
 DEFAULT_ADMIN_PASSWORD = "admin123456"
 DEFAULT_MONITOR_PASSWORD = "monitor123456"
 DEFAULT_PLAYER_PASSWORD = "123456"
 
 
 def _hash_pwd(pwd: str) -> str:
-    """使用auth.py中的hash_password确保哈希方式一致"""
     return hash_password(pwd)
 
 
@@ -28,12 +26,21 @@ def _log(msg: str):
     print(f"[SIMULATE] {msg}")
 
 
+def _get_client_ip(request: Request) -> str:
+    if "X-Forwarded-For" in request.headers:
+        return request.headers["X-Forwarded-For"].split(",")[0].strip()
+    if "X-Real-IP" in request.headers:
+        return request.headers["X-Real-IP"]
+    host = request.client.host if request.client else ""
+    return host or "unknown"
+
+
 @router.post("/run")
-def run_simulation():
-    """
-    一键数据模拟：创建 admin/10 玩家 + 绑定部落 + 2 轮对战
-    直接调用即可，无需 token
-    """
+def run_simulation(request: Request, admin=Depends(require_admin)):
+    client_ip = _get_client_ip(request)
+    allowed_ips = os.environ.get("SIMULATE_ALLOWED_IPS", "127.0.0.1").split(",")
+    if client_ip not in allowed_ips:
+        raise HTTPException(status_code=403, detail="IP地址不允许执行模拟")
     _log("开始执行数据模拟...")
     init_db()
     report = _do_simulate()
@@ -42,9 +49,8 @@ def run_simulation():
 
 
 @router.get("/run")
-def run_simulation_get():
-    """GET 方式（方便从浏览器地址栏触发）"""
-    return run_simulation()
+def run_simulation_get(request: Request, admin=Depends(require_admin)):
+    return run_simulation(request, admin)
 
 
 def _do_simulate() -> dict:
@@ -74,26 +80,24 @@ def _clear_data():
                 except Exception:
                     pass
 
-            # 确保 admin 和 monitor 用户存在且密码正确
             c.execute("SELECT id FROM users WHERE username='admin'")
             admin_row = c.fetchone()
             if admin_row:
-                c.execute("UPDATE users SET password_hash=%s, plain_password=%s, role='admin', is_super_admin=1, status='active', must_change_pwd=0 WHERE username='admin'",
-                          (_hash_pwd(DEFAULT_ADMIN_PASSWORD), DEFAULT_ADMIN_PASSWORD))
+                c.execute("UPDATE users SET password_hash=%s, role='admin', is_super_admin=1, status='active', must_change_pwd=0, plain_password='' WHERE username='admin'",
+                          (_hash_pwd(DEFAULT_ADMIN_PASSWORD),))
             else:
-                c.execute("INSERT INTO users (username, password_hash, plain_password, role, is_super_admin, status, must_change_pwd) VALUES (%s,%s,%s,'admin',1,'active',0)",
-                          ('admin', _hash_pwd(DEFAULT_ADMIN_PASSWORD), DEFAULT_ADMIN_PASSWORD))
+                c.execute("INSERT INTO users (username, password_hash, role, is_super_admin, status, must_change_pwd) VALUES (%s,%s,'admin',1,'active',0)",
+                          ('admin', _hash_pwd(DEFAULT_ADMIN_PASSWORD)))
 
             c.execute("SELECT id FROM users WHERE username='monitor'")
             monitor_row = c.fetchone()
             if monitor_row:
-                c.execute("UPDATE users SET password_hash=%s, plain_password=%s, role='monitor', status='active', must_change_pwd=0 WHERE username='monitor'",
-                          (_hash_pwd(DEFAULT_MONITOR_PASSWORD), DEFAULT_MONITOR_PASSWORD))
+                c.execute("UPDATE users SET password_hash=%s, role='monitor', status='active', must_change_pwd=0, plain_password='' WHERE username='monitor'",
+                          (_hash_pwd(DEFAULT_MONITOR_PASSWORD),))
             else:
-                c.execute("INSERT INTO users (username, password_hash, plain_password, role, status, must_change_pwd) VALUES (%s,%s,%s,'monitor','active',0)",
-                          ('monitor', _hash_pwd(DEFAULT_MONITOR_PASSWORD), DEFAULT_MONITOR_PASSWORD))
+                c.execute("INSERT INTO users (username, password_hash, role, status, must_change_pwd) VALUES (%s,%s,'monitor','active',0)",
+                          ('monitor', _hash_pwd(DEFAULT_MONITOR_PASSWORD)))
 
-            # 删除其他用户
             try:
                 c.execute("DELETE FROM users WHERE username NOT IN ('admin', 'monitor')")
             except Exception:
@@ -136,9 +140,9 @@ def _create_users() -> tuple:
                 initial_score = random.randint(10, 19)
 
                 c.execute(
-                    "INSERT INTO users (username, password_hash, plain_password, role, must_change_pwd) "
-                    "VALUES (%s, %s, %s, 'player', 1)",
-                    (username, _hash_pwd(password), password))
+                    "INSERT INTO users (username, password_hash, role, must_change_pwd) "
+                    "VALUES (%s, %s, 'player', 1)",
+                    (username, _hash_pwd(password)))
                 user_id = c.lastrowid
 
                 c.execute("INSERT INTO clans (name, code, contact, score) VALUES (%s,%s,%s,%s)",
