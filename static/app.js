@@ -166,8 +166,12 @@ async function loadPlayerData() {
         matchSuccessCard.style.display = 'none';
         matchFailedCard.style.display = 'none';
         matchDone.style.display = 'none';
-        resultBanner.style.display = 'none';
-        resultBanner.innerHTML = '';
+        if (data.cancel_notice) {
+            renderAdminCancelNotice(data.cancel_notice);
+        } else {
+            resultBanner.style.display = 'none';
+            resultBanner.innerHTML = '';
+        }
     }
 
     // 配置统计卡片显示控制
@@ -292,6 +296,21 @@ function renderRoundStatus(currentRound, myRegistration) {
     }
 }
 
+function renderAdminCancelNotice(cancelNotice) {
+    const banner = document.getElementById('match-result-banner');
+    const message = cancelNotice && cancelNotice.message
+        ? cancelNotice.message
+        : '管理员已撤销您的本轮登记，请重新登记';
+    banner.className = 'match-result-banner notice';
+    banner.style.display = '';
+    banner.innerHTML = `
+        <div class="banner-big-text">📢 登记已撤销</div>
+        <div class="banner-detail">
+            ${escapeHTML(message)}<br>
+            您现在可以重新选择“匹配成功”或“未匹配成功”进行登记。
+        </div>`;
+}
+
 function renderRoundTime(currentRound) {
     const card = document.getElementById('round-time-card');
     const el = document.getElementById('round-time-content');
@@ -348,7 +367,7 @@ async function loadMatchHistory() {
     const data = await api('GET', `/match-history${params}`);
     const el = document.getElementById('match-history');
     if (data.matches.length === 0) { el.innerHTML = '<p class="empty-text">暂无对战记录</p>'; return; }
-    let html = '<div class="table-wrapper"><table><tr><th>轮次</th><th>日期</th><th>对手</th><th>结果</th><th>我的配置</th><th>操作</th></tr>';
+    let html = '<div class="table-wrapper"><table><tr><th>轮次</th><th>日期</th><th>对手</th><th>结果</th><th>我的配置</th></tr>';
     data.matches.forEach((m, i) => {
         const myClanIds = myClans.map(c => c.id);
         const iAmA = myClanIds.includes(m.clan_a_id);
@@ -359,9 +378,8 @@ async function loadMatchHistory() {
         const cls = iWon ? 'score-positive' : 'score-negative';
         const reg = m.is_registered ? '' : ' <span style="font-size:0.72rem;color:var(--text-muted)">(未登记)</span>';
         const roundLabel = formatRoundNo(m);
-        const canCancel = m.can_cancel ? `<button class="btn btn-sm btn-danger" onclick="cancelMatch(${m.id})">撤销</button>` : '';
         const configDisplay = m.config_remark ? `<span title="${escapeAttr(m.config_remark)}">${escapeHTML(m.config_remark.length > 20 ? m.config_remark.slice(0, 20) + '…' : m.config_remark)}</span>` : '-';
-        html += `<tr><td>${roundLabel}</td><td>${formatDate(m.matched_at)}</td><td>${escapeHTML(opponentName)}${reg}</td><td class="${cls}">${result}</td><td style="font-size:0.82rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${configDisplay}</td><td>${canCancel}</td></tr>`;
+        html += `<tr><td>${roundLabel}</td><td>${formatDate(m.matched_at)}</td><td>${escapeHTML(opponentName)}${reg}</td><td class="${cls}">${result}</td><td style="font-size:0.82rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${configDisplay}</td></tr>`;
     });
     html += '</table></div>';
     el.innerHTML = html;
@@ -628,17 +646,16 @@ async function loadPlayerDataLight() {
         } else {
             // 轻量刷新不主动展开，保持当前用户的选择
             matchDone.style.display = 'none';
-            resultBanner.style.display = 'none';
-            resultBanner.innerHTML = '';
+            if (data.cancel_notice) {
+                renderAdminCancelNotice(data.cancel_notice);
+            } else {
+                resultBanner.style.display = 'none';
+                resultBanner.innerHTML = '';
+            }
         }
 
         await loadLeaderboard();
     } catch {}
-}
-
-async function cancelMatch(matchId) {
-    if (!await customConfirm('确定要撤销该匹配记录？\n积分将恢复。', '撤销')) return;
-    try { await api('DELETE', `/match/${matchId}`); alert('撤销成功！'); loadPlayerData(); } catch {}
 }
 
 // ========== 修改密码（成员） ==========
@@ -1400,7 +1417,7 @@ function maybeShowMatchPrompt(data) {
 
     const roundId = data.current_round.id;
     const flag = `match_prompt_shown_round_${roundId}`;
-    if (sessionStorage.getItem(flag) === '1') return;
+    if (!data.cancel_notice && sessionStorage.getItem(flag) === '1') return;
 
     sessionStorage.setItem(flag, '1');
     const modal = document.getElementById('match-prompt-modal');

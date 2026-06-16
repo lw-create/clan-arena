@@ -172,6 +172,16 @@ TABLES = [
         registered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY uk_round_user_clan (round_id, user_id, clan_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS round_cancel_notices (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        round_id INT NOT NULL,
+        user_id INT NOT NULL,
+        clan_id INT NOT NULL,
+        match_id INT NOT NULL,
+        message VARCHAR(255) NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_round_cancel_notice (round_id, user_id, clan_id, match_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     """CREATE TABLE IF NOT EXISTS score_guide (
         id INT AUTO_INCREMENT PRIMARY KEY,
         content TEXT NOT NULL,

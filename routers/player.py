@@ -202,6 +202,10 @@ def match_registered(req: MatchRegisteredRequest, user=Depends(get_current_user)
                         INSERT IGNORE INTO round_registrations (round_id, user_id, clan_id)
                         VALUES (%s, %s, %s)
                     """, (current_round["id"], user["id"], uc["clan_id"]))
+                cursor.execute(
+                    "DELETE FROM round_cancel_notices WHERE round_id = %s AND user_id = %s",
+                    (current_round["id"], user["id"])
+                )
 
             cursor.execute("SELECT name, score FROM clans WHERE id = %s", (winner_id,))
             winner = cursor.fetchone()
@@ -268,6 +272,18 @@ def match_unregistered(req: MatchUnregisteredRequest, user=Depends(get_current_u
 
             match_id = cursor.lastrowid
 
+            # 记录本轮登记，并清理管理员撤销提示
+            if current_round:
+                for uc in my_clans:
+                    cursor.execute("""
+                        INSERT IGNORE INTO round_registrations (round_id, user_id, clan_id)
+                        VALUES (%s, %s, %s)
+                    """, (current_round["id"], user["id"], uc["clan_id"]))
+                cursor.execute(
+                    "DELETE FROM round_cancel_notices WHERE round_id = %s AND user_id = %s",
+                    (current_round["id"], user["id"])
+                )
+
             # 未登记的对战不修改积分，保持原分数
             new_score = score_before
 
@@ -285,6 +301,7 @@ def match_unregistered(req: MatchUnregisteredRequest, user=Depends(get_current_u
 
 @router.delete("/match/{match_id}")
 def cancel_match(match_id: int, user=Depends(get_current_user)):
+    raise HTTPException(status_code=403, detail="成员不能自行撤销登记，请联系管理员处理")
     with get_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute("SELECT * FROM matches WHERE id = %s AND created_by = %s", (match_id, user["id"]))

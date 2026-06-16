@@ -416,6 +416,30 @@ def admin_cancel_match(match_id: int, admin=Depends(require_admin)):
                     if row and row["code"].startswith("UNREG_"):
                         cursor.execute("DELETE FROM clans WHERE id = %s", (cid,))
 
+            # 记录管理员撤销通知，让成员端解除胜负显示并提示重新登记
+            cursor.execute(
+                """
+                SELECT user_id, clan_id
+                FROM round_registrations
+                WHERE round_id = %s AND clan_id IN (%s, %s)
+                """,
+                (current_round["id"], match["clan_a_id"], match["clan_b_id"])
+            )
+            registration_rows = cursor.fetchall()
+            cancel_message = "管理员已撤销您的本轮登记，请重新登记"
+            for row in registration_rows:
+                cursor.execute(
+                    """
+                    INSERT INTO round_cancel_notices
+                        (round_id, user_id, clan_id, match_id, message)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        message = VALUES(message),
+                        created_at = NOW()
+                    """,
+                    (current_round["id"], row["user_id"], row["clan_id"], match_id, cancel_message)
+                )
+
             # 删除轮次登记记录
             cursor.execute(
                 "DELETE FROM round_registrations WHERE round_id = %s AND clan_id IN (%s, %s)",
