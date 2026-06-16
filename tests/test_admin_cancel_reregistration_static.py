@@ -19,6 +19,8 @@ class AdminCancelReregistrationStaticTests(unittest.TestCase):
         admin = read("routers/admin.py")
         self.assertIn("INSERT INTO round_cancel_notices", admin)
         self.assertIn("管理员已撤销您的本轮登记，请重新登记", admin)
+        self.assertIn("SELECT DISTINCT user_id, clan_id", admin)
+        self.assertIn("DELETE FROM round_registrations WHERE round_id = %s AND user_id IN", admin)
         self.assertLess(
             admin.index("INSERT INTO round_cancel_notices"),
             admin.index("DELETE FROM round_registrations WHERE round_id"),
@@ -28,6 +30,7 @@ class AdminCancelReregistrationStaticTests(unittest.TestCase):
         auth = read("routers/auth.py")
         self.assertIn("cancel_notice", auth)
         self.assertIn("FROM round_cancel_notices", auth)
+        self.assertIn('my_registration = {"registered": False, "registered_at": None}', auth)
         self.assertIn('"cancel_notice": cancel_notice', auth)
 
     def test_player_registration_clears_cancel_notice(self):
@@ -55,6 +58,11 @@ class AdminCancelReregistrationStaticTests(unittest.TestCase):
         app = read("static/app.js")
         self.assertIn("积分保持不变", app)
         self.assertNotIn("默认判输（-1分）", app)
+
+    def test_loss_copy_uses_lose_not_failure(self):
+        app = read("static/app.js")
+        self.assertIn('<div class="banner-big-text">✗ 输</div>', app)
+        self.assertNotIn('<div class="banner-big-text">✗ 失败</div>', app)
 
 
 if __name__ == "__main__":

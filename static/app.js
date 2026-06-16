@@ -144,7 +144,7 @@ async function loadPlayerData() {
         } else if (result === 'lose') {
             resultBanner.className = 'match-result-banner lose';
             resultBanner.innerHTML = `
-                <div class="banner-big-text">✗ 失败</div>
+                <div class="banner-big-text">✗ 输</div>
                 <div class="banner-detail">
                     <div class="banner-vs">${escapeHTML(data.active_match_info.my_clan_name)} <span class="vs-tag">VS</span> ${escapeHTML(data.active_match_info.opponent_name)}</div>
                     <div class="banner-score">积分 -1，再接再厉！</div>
@@ -552,7 +552,7 @@ function showMatchResult(data, mode) {
         } else {
             banner.className = 'match-result-banner lose';
             banner.innerHTML = `
-                <div class="banner-big-text">✗ 失败</div>
+                <div class="banner-big-text">✗ 输</div>
                 <div class="banner-detail">
                     <div class="banner-vs">${escapeHTML(myClanName)} <span class="vs-tag">VS</span> ${escapeHTML(opponentName)}</div>
                     <div class="banner-score">积分 -1，再接再厉（当前：${data.loser.score}）</div>
@@ -621,7 +621,7 @@ async function loadPlayerDataLight() {
             } else if (data.active_match_info.result === 'lose') {
                 resultBanner.className = 'match-result-banner lose';
                 resultBanner.innerHTML = `
-                    <div class="banner-big-text">✗ 失败</div>
+                    <div class="banner-big-text">✗ 输</div>
                     <div class="banner-detail">
                         <div class="banner-vs">${escapeHTML(data.active_match_info.my_clan_name)} <span class="vs-tag">VS</span> ${escapeHTML(data.active_match_info.opponent_name)}</div>
                         <div class="banner-score">积分 -1，再接再厉！</div>

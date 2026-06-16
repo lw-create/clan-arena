@@ -168,18 +168,19 @@ def get_me(user=Depends(get_current_user)):
                                 "remark": remark,
                             }
 
-                if not my_registration["registered"] and not has_active_match:
-                    cursor.execute(
-                        """
-                        SELECT message, created_at
-                        FROM round_cancel_notices
-                        WHERE round_id = %s AND user_id = %s
-                        ORDER BY created_at DESC
-                        LIMIT 1
-                        """,
-                        (current_round["id"], user["id"])
-                    )
-                    cancel_notice = cursor.fetchone()
+                cursor.execute(
+                    """
+                    SELECT message, created_at
+                    FROM round_cancel_notices
+                    WHERE round_id = %s AND user_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (current_round["id"], user["id"])
+                )
+                cancel_notice = cursor.fetchone()
+                if cancel_notice and not has_active_match:
+                    my_registration = {"registered": False, "registered_at": None}
 
             # 积分操作指南
             cursor.execute("SELECT content FROM score_guide ORDER BY id DESC LIMIT 1")

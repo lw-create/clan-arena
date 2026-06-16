@@ -421,13 +421,14 @@ def admin_cancel_match(match_id: int, admin=Depends(require_admin)):
             # 记录管理员撤销通知，让成员端解除胜负显示并提示重新登记
             cursor.execute(
                 """
-                SELECT user_id, clan_id
+                SELECT DISTINCT user_id, clan_id
                 FROM round_registrations
                 WHERE round_id = %s AND clan_id IN (%s, %s)
                 """,
                 (current_round["id"], match["clan_a_id"], match["clan_b_id"])
             )
             registration_rows = cursor.fetchall()
+            affected_user_ids = sorted({row["user_id"] for row in registration_rows})
             cancel_message = "管理员已撤销您的本轮登记，请重新登记"
             for row in registration_rows:
                 cursor.execute(
@@ -442,11 +443,18 @@ def admin_cancel_match(match_id: int, admin=Depends(require_admin)):
                     (current_round["id"], row["user_id"], row["clan_id"], match_id, cancel_message)
                 )
 
-            # 删除轮次登记记录
-            cursor.execute(
-                "DELETE FROM round_registrations WHERE round_id = %s AND clan_id IN (%s, %s)",
-                (current_round["id"], match["clan_a_id"], match["clan_b_id"])
-            )
+            # 删除受影响成员在本轮的全部登记状态，避免多部落账号残留“已登记”
+            if affected_user_ids:
+                user_placeholders = ",".join(["%s"] * len(affected_user_ids))
+                cursor.execute(
+                    f"DELETE FROM round_registrations WHERE round_id = %s AND user_id IN ({user_placeholders})",
+                    (current_round["id"], *affected_user_ids)
+                )
+            else:
+                cursor.execute(
+                    "DELETE FROM round_registrations WHERE round_id = %s AND clan_id IN (%s, %s)",
+                    (current_round["id"], match["clan_a_id"], match["clan_b_id"])
+                )
 
             # 删除匹配记录
             cursor.execute("DELETE FROM matches WHERE id = %s", (match_id,))
